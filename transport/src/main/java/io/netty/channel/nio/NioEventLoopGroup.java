@@ -57,6 +57,8 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
      * {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
      */
     public NioEventLoopGroup(ThreadFactory threadFactory) {
+        //默认selector,最终实现类似：https://github.com/frohoff/jdk8u-jdk/blob/master/src/macosx/classes/sun/nio/ch/DefaultSelectorProvider.java
+        //basic flow: 1 java.nio.channels.spi.SelectorProvider 2 META-INF/services 3 default
         this(0, threadFactory, SelectorProvider.provider());
     }
 

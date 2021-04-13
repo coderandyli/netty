@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * 基于策略模式，
+ *
  * Default implementation which uses simple round-robin to choose next {@link EventExecutor}.
  */
 @UnstableApi
@@ -30,8 +32,10 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
 
     private DefaultEventExecutorChooserFactory() { }
 
+    // 基于【策略模式】实现
     @Override
     public EventExecutorChooser newChooser(EventExecutor[] executors) {
+        // 根据待绑定的executor是否是2的幂次方，做出不同的选择（策略模式）
         if (isPowerOfTwo(executors.length)) {
             return new PowerOfTwoEventExecutorChooser(executors);
         } else {
@@ -51,6 +55,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
             this.executors = executors;
         }
 
+        // excutor总数必须是2的幂次方（2、4、8...）才会用，&运算效率更高
         @Override
         public EventExecutor next() {
             return executors[idx.getAndIncrement() & executors.length - 1];
@@ -70,6 +75,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
 
         @Override
         public EventExecutor next() {
+            // 递增、取模、取正值，不然可能为负值
             return executors[(int) Math.abs(idx.getAndIncrement() % executors.length)];
         }
     }
