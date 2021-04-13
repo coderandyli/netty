@@ -37,9 +37,13 @@ import java.util.List;
  * | ABC | DEF | GHI |
  * +-----+-----+-----+
  * </pre>
+ *
+ * 固定长度解码器
  */
 public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
-
+    /**
+     * 定义的固定的长度
+     */
     private final int frameLength;
 
     /**
@@ -52,6 +56,9 @@ public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
         this.frameLength = frameLength;
     }
 
+    /**
+     * 解码
+     */
     @Override
     protected final void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         Object decoded = decode(ctx, in);
@@ -64,13 +71,15 @@ public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
      * Create a frame out of the {@link ByteBuf} and return it.
      *
      * @param   ctx             the {@link ChannelHandlerContext} which this {@link ByteToMessageDecoder} belongs to
-     * @param   in              the {@link ByteBuf} from which to read data
+     * @param   in              the {@link ByteBuf} from which to read data  数据积累器收集达到的数据
      * @return  frame           the {@link ByteBuf} which represent the frame or {@code null} if no frame could
      *                          be created.
      */
     protected Object decode(
             @SuppressWarnings("UnusedParameters") ChannelHandlerContext ctx, ByteBuf in) throws Exception {
+        // 判断数据是否小于固定长度
         if (in.readableBytes() < frameLength) {
+            // 小于，不做解析（解析不出来）
             return null;
         } else {
             return in.readRetainedSlice(frameLength);

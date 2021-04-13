@@ -44,9 +44,9 @@ import io.netty.channel.ChannelHandlerContext;
  * length field.  Therefore, it can be decoded with the simplistic parameter
  * combination.
  * <pre>
- * <b>lengthFieldOffset</b>   = <b>0</b>
- * <b>lengthFieldLength</b>   = <b>2</b>
- * lengthAdjustment    = 0
+ * <b>lengthFieldOffset</b>   = <b>0</b>  控制length filed的位移
+ * <b>lengthFieldLength</b>   = <b>2</b>  length filed 的长度
+ * lengthAdjustment    = 0                length filed 表示实际内容长度，当需要额外添加一些内容时，调整该参数
  * initialBytesToStrip = 0 (= do not strip header)
  *
  * BEFORE DECODE (14 bytes)         AFTER DECODE (14 bytes)
@@ -183,14 +183,24 @@ import io.netty.channel.ChannelHandlerContext;
  * +------+--------+------+----------------+      +------+----------------+
  * </pre>
  * @see LengthFieldPrepender
+ * 解码器（固定长度字段，存储内容长度信息），其对应的编码其为{@link LengthFieldPrepender}
  */
 public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
 
     private final ByteOrder byteOrder;
     private final int maxFrameLength;
+    /**
+     * length filed的位移
+     */
     private final int lengthFieldOffset;
+    /**
+     * length filed的长度
+     */
     private final int lengthFieldLength;
     private final int lengthFieldEndOffset;
+    /**
+     * length filed 表示实际内容长度，当需要额外添加一些内容时，调整该参数
+     */
     private final int lengthAdjustment;
     private final int initialBytesToStrip;
     private final boolean failFast;

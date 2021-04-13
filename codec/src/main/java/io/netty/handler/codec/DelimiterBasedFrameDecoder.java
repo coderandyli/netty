@@ -57,9 +57,14 @@ import java.util.List;
  * | ABC\nDEF |
  * +----------+
  * </pre>
+ *
+ * 基于分隔符实现的解码器
  */
 public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
 
+    /**
+     * 分割符数组
+     */
     private final ByteBuf[] delimiters;
     private final int maxFrameLength;
     private final boolean stripDelimiter;
