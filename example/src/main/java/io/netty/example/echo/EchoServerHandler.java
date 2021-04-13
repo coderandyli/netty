@@ -35,6 +35,9 @@ public class EchoServerHandler extends ChannelInboundHandlerAdapter {
         ctx.flush();
     }
 
+    /**
+     * 捕获异常
+     */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         // Close the connection when an exception is raised.
