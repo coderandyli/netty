@@ -36,6 +36,8 @@ import io.netty.handler.codec.MessageToByteEncoder;
  *
  * @see CodedOutputStream
  * @see CodedOutputByteBufferNano
+ *
+ *  **An encoder that prepends the Google Protocol Buffers**（位于Protobuf前面的编码器）
  */
 @Sharable
 public class ProtobufVarint32LengthFieldPrepender extends MessageToByteEncoder<ByteBuf> {

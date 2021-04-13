@@ -18,5 +18,7 @@
  * Encoder, decoder and their compatibility stream implementations which
  * transform a {@link java.io.Serializable} object into a byte buffer and
  * vice versa.
+ *
+ * 相较于JDK原生的序列化，更小一些
  */
 package io.netty.handler.codec.serialization;

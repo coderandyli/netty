@@ -73,7 +73,10 @@ import static java.lang.Integer.MAX_VALUE;
  * is not released or added to the <tt>out</tt> {@link List}. Use derived buffers like {@link ByteBuf#readSlice(int)}
  * to avoid leaking memory.
  *
- * 解码器
+ * 一次解码器：{@link ByteBuf} (原始数据) ----> {@link ByteBuf} (用户数据)
+ *      - 经过一次解码器解码之后，对应的数据还是字节数据
+ *
+ * 一次解码器抽象类
  */
 public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter {
 

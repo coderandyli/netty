@@ -17,5 +17,7 @@
 /**
  * Encoder and decoder which transform a {@link java.lang.String} into a
  * {@link io.netty.buffer.ByteBuf} and vice versa.
+ *
+ * 转化成String
  */
 package io.netty.handler.codec.string;

@@ -62,6 +62,9 @@ import java.util.List;
  *     ch.write(res);
  * }
  * </pre>
+ *
+ * Protobuf二次解码器
+ *  {@link ByteBuf} ---> Java对象
  */
 @Sharable
 public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
@@ -72,6 +75,7 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
         boolean hasParser = false;
         try {
             // MessageLite.getParserForType() is not available until protobuf 2.5.0.
+            // protobuf 2.5.0新增，通过反射查看是否有
             MessageLite.class.getDeclaredMethod("getParserForType");
             hasParser = true;
         } catch (Throwable t) {
@@ -100,6 +104,9 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
         this.extensionRegistry = extensionRegistry;
     }
 
+    /**
+     * 解码入口
+     */
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out)
             throws Exception {
@@ -114,6 +121,7 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
             offset = 0;
         }
 
+        // 需要extension
         if (extensionRegistry == null) {
             if (HAS_PARSER) {
                 out.add(prototype.getParserForType().parseFrom(array, offset, length));
