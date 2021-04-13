@@ -23,6 +23,10 @@ import io.netty.util.internal.StringUtil;
  * A user event triggered by {@link IdleStateHandler} when a {@link Channel} is idle.
  */
 public class IdleStateEvent {
+    /**
+     * 对应{@link IdleState}，区分第一次和非第一次
+     *  - Idle可能多次出发，可以针对性的处理
+     */
     public static final IdleStateEvent FIRST_READER_IDLE_STATE_EVENT =
             new DefaultIdleStateEvent(IdleState.READER_IDLE, true);
     public static final IdleStateEvent READER_IDLE_STATE_EVENT =
