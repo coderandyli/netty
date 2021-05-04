@@ -71,18 +71,20 @@ public final class ByteBufUtil {
             (int) CharsetUtil.encoder(CharsetUtil.UTF_8).maxBytesPerChar();
 
     static final int WRITE_CHUNK_SIZE = 8192;
+    // 默认bytebuf分配器
     static final ByteBufAllocator DEFAULT_ALLOCATOR;
 
     static {
+        // 池化类型可通过io.netty.allocator.type设置，默认情况下如果是安卓平台，使用非池化(unpooled)；如果是非安卓平台，使用池化。
         String allocType = SystemPropertyUtil.get(
                 "io.netty.allocator.type", PlatformDependent.isAndroid() ? "unpooled" : "pooled");
         allocType = allocType.toLowerCase(Locale.US).trim();
 
         ByteBufAllocator alloc;
-        if ("unpooled".equals(allocType)) {
+        if ("unpooled".equals(allocType)) { // 非池化
             alloc = UnpooledByteBufAllocator.DEFAULT;
             logger.debug("-Dio.netty.allocator.type: {}", allocType);
-        } else if ("pooled".equals(allocType)) {
+        } else if ("pooled".equals(allocType)) { // 池化
             alloc = PooledByteBufAllocator.DEFAULT;
             logger.debug("-Dio.netty.allocator.type: {}", allocType);
         } else {
@@ -90,6 +92,7 @@ public final class ByteBufUtil {
             logger.debug("-Dio.netty.allocator.type: pooled (unknown: {})", allocType);
         }
 
+        // 复制给DEFAULT_ALLOCATOR
         DEFAULT_ALLOCATOR = alloc;
 
         THREAD_LOCAL_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.threadLocalDirectBufferSize", 0);

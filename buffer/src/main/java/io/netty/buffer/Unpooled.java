@@ -69,6 +69,10 @@ import java.util.Arrays;
  * between the original data and the copied buffer.  Various copy methods are
  * provided and their name is all {@code copiedBuffer()}.  It is also convenient
  * to use this operation to merge multiple buffers into one buffer.
+ * 【Netty内存使用技巧】- Zero Copy
+ * 【使用包装代替实际复制】通过wrap操作, 我们可以将byte[]数组、ByteBuf、ByteBuffer等包装成一个Netty ByteBuf对象, 进而避免拷贝操作。
+ * {@link Unpooled#wrappedBuffer(byte[])} and so on
+ *
  */
 public final class Unpooled {
 

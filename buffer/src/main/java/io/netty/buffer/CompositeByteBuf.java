@@ -45,6 +45,11 @@ import static io.netty.util.internal.ObjectUtil.checkNotNull;
  * A virtual buffer which shows multiple buffers as a single merged buffer.  It is recommended to use
  * {@link ByteBufAllocator#compositeBuffer()} or {@link Unpooled#wrappedBuffer(ByteBuf...)} instead of calling the
  * constructor explicitly.
+ * 【Netty内存使用技巧】- Zero Copy
+ * 使用【逻辑组合】代替【实际复制】
+ * eg: {@link ByteToMessageDecoder#COMPOSITE_CUMULATOR}
+ *
+ *
  */
 public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements Iterable<ByteBuf> {
 

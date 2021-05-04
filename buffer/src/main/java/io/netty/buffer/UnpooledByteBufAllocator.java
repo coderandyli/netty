@@ -32,6 +32,7 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
 
     /**
      * Default instance which uses leak-detection for direct buffers.
+     * 创建的默认的示例使用的是堆外内存
      */
     public static final UnpooledByteBufAllocator DEFAULT =
             new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
@@ -89,6 +90,7 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
         final ByteBuf buf;
         if (PlatformDependent.hasUnsafe()) {
             buf = noCleaner ? new InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf(this, initialCapacity, maxCapacity) :
+                    // 大多数情况
                     new InstrumentedUnpooledUnsafeDirectByteBuf(this, initialCapacity, maxCapacity);
         } else {
             buf = new InstrumentedUnpooledDirectByteBuf(this, initialCapacity, maxCapacity);

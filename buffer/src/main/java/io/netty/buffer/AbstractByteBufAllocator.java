@@ -25,10 +25,11 @@ import io.netty.util.internal.StringUtil;
 
 /**
  * Skeletal {@link ByteBufAllocator} implementation to extend.
+ *
  */
 public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
-    static final int DEFAULT_INITIAL_CAPACITY = 256;
-    static final int DEFAULT_MAX_CAPACITY = Integer.MAX_VALUE;
+    static final int DEFAULT_INITIAL_CAPACITY = 256; // 初始容量大小
+    static final int DEFAULT_MAX_CAPACITY = Integer.MAX_VALUE; // 最大容量
     static final int DEFAULT_MAX_COMPONENTS = 16;
     static final int CALCULATE_THRESHOLD = 1048576 * 4; // 4 MiB page
 
@@ -104,6 +105,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
     @Override
     public ByteBuf buffer() {
         if (directByDefault) {
+            // 分配堆外内存
             return directBuffer();
         }
         return heapBuffer();
@@ -168,16 +170,25 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         return newHeapBuffer(initialCapacity, maxCapacity);
     }
 
+    /**
+     * 分配堆外内存
+     */
     @Override
     public ByteBuf directBuffer() {
         return directBuffer(DEFAULT_INITIAL_CAPACITY, DEFAULT_MAX_CAPACITY);
     }
 
+    /**
+     * 分配堆外内存
+     */
     @Override
     public ByteBuf directBuffer(int initialCapacity) {
         return directBuffer(initialCapacity, DEFAULT_MAX_CAPACITY);
     }
 
+    /**
+     * 分配堆外内存
+     */
     @Override
     public ByteBuf directBuffer(int initialCapacity, int maxCapacity) {
         if (initialCapacity == 0 && maxCapacity == 0) {
@@ -239,6 +250,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
 
     /**
      * Create a direct {@link ByteBuf} with the given initialCapacity and maxCapacity.
+     * 创建堆外内存，子类实现 eg：{@link UnpooledByteBufAllocator#newDirectBuffer(int, int)}
      */
     protected abstract ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity);
 

@@ -35,8 +35,11 @@ import static java.lang.Math.min;
 
 /**
  * Light-weight object pool based on a thread-local stack.
+ * 基于本地线程栈的轻量级对象池
  *
  * @param <T> the type of the pooled object
+ *
+ * 轻量级对象池
  */
 public abstract class Recycler<T> {
 
@@ -166,11 +169,17 @@ public abstract class Recycler<T> {
         }
     }
 
+    /**
+     * 获取一个对象
+     */
     @SuppressWarnings("unchecked")
     public final T get() {
+        // 表示没有开启池化
         if (maxCapacityPerThread == 0) {
             return newObject((Handle<T>) NOOP_HANDLE);
         }
+
+        //
         Stack<T> stack = threadLocal.get();
         DefaultHandle<T> handle = stack.pop();
         if (handle == null) {
@@ -242,6 +251,7 @@ public abstract class Recycler<T> {
                 throw new IllegalStateException("recycled already");
             }
 
+            // 将对象本身还回到池中
             stack.push(this);
         }
 
@@ -515,10 +525,10 @@ public abstract class Recycler<T> {
         // the user will store a reference to the DefaultHandle somewhere and never clear this reference (or not clear
         // it in a timely manner).
         final WeakReference<Thread> threadRef;
-        final AtomicInteger availableSharedCapacity;
+        final AtomicInteger availableSharedCapacity; // 可用的共享容量
         private final int maxDelayedQueues;
 
-        private final int maxCapacity;
+        private final int maxCapacity; // 最大容量
         private final int interval;
         private final int delayedQueueInterval;
         DefaultHandle<?>[] elements;

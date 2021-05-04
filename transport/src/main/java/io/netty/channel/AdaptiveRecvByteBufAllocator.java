@@ -25,12 +25,18 @@ import static java.lang.Math.min;
 /**
  * The {@link RecvByteBufAllocator} that automatically increases and
  * decreases the predicted buffer size on feed back.
+ *
+ * 自动增加或减少预测的缓冲区大小.
+ *
  * <p>
  * It gradually increases the expected number of readable bytes if the previous
  * read fully filled the allocated buffer.  It gradually decreases the expected
  * number of readable bytes if the read operation was not able to fill a certain
  * amount of the allocated buffer two times consecutively.  Otherwise, it keeps
  * returning the same prediction.
+ *
+ * 【Netty内存使用技巧】- 预测分配大小 {@link HandleImpl#record(int)}
+ *
  */
 public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufAllocator {
 
@@ -56,7 +62,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         }
 
         SIZE_TABLE = new int[sizeTable.size()];
-        for (int i = 0; i < SIZE_TABLE.length; i ++) {
+        for (int i = 0; i < SIZE_TABLE.length; i++) {
             SIZE_TABLE[i] = sizeTable.get(i);
         }
     }
@@ -68,7 +74,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
     public static final AdaptiveRecvByteBufAllocator DEFAULT = new AdaptiveRecvByteBufAllocator();
 
     private static int getSizeTableIndex(final int size) {
-        for (int low = 0, high = SIZE_TABLE.length - 1;;) {
+        for (int low = 0, high = SIZE_TABLE.length - 1; ; ) {
             if (high < low) {
                 return low;
             }
@@ -96,6 +102,9 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         private final int maxIndex;
         private int index;
         private int nextReceiveBufferSize;
+        /**
+         * 是否现在减少
+         */
         private boolean decreaseNow;
 
         HandleImpl(int minIndex, int maxIndex, int initial) {
@@ -118,20 +127,30 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
             super.lastBytesRead(bytes);
         }
 
+        /**
+         * 猜测下一个要分配的buffer的大小.
+         */
         @Override
         public int guess() {
             return nextReceiveBufferSize;
         }
 
+        /**
+         * 接受数据的buffer的容量会尽可能的大，以保证接受数据；同时也会尽可能的小，以免造成空间浪费。
+         */
         private void record(int actualReadBytes) {
+            // 尝试是否可以减少分配的空间仍然能满足需求
+            // 尝试方法：当前实际读取的size是否小于或者等于打算缩小的尺寸
             if (actualReadBytes <= SIZE_TABLE[max(0, index - INDEX_DECREMENT)]) {
                 if (decreaseNow) {
+                    // 减少
                     index = max(index - INDEX_DECREMENT, minIndex);
                     nextReceiveBufferSize = SIZE_TABLE[index];
                     decreaseNow = false;
                 } else {
                     decreaseNow = true;
                 }
+                // 判断是否实际读取的数据大于等于预估的，如果是，尝试扩容。
             } else if (actualReadBytes >= nextReceiveBufferSize) {
                 index = min(index + INDEX_INCREMENT, maxIndex);
                 nextReceiveBufferSize = SIZE_TABLE[index];
@@ -161,9 +180,9 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
     /**
      * Creates a new predictor with the specified parameters.
      *
-     * @param minimum  the inclusive lower bound of the expected buffer size
-     * @param initial  the initial buffer size when no feed back was received
-     * @param maximum  the inclusive upper bound of the expected buffer size
+     * @param minimum the inclusive lower bound of the expected buffer size
+     * @param initial the initial buffer size when no feed back was received
+     * @param maximum the inclusive upper bound of the expected buffer size
      */
     public AdaptiveRecvByteBufAllocator(int minimum, int initial, int maximum) {
         checkPositive(minimum, "minimum");

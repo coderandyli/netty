@@ -35,6 +35,7 @@ final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
         }
     });
 
+    // 从对象池中"借"一个使用
     static PooledDirectByteBuf newInstance(int maxCapacity) {
         PooledDirectByteBuf buf = RECYCLER.get();
         buf.reuse(maxCapacity);

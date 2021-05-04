@@ -123,6 +123,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      *
      * 数据积累器的实现2
      *  - 基于内存组合的方式实现，避免内存复制
+     *  零拷贝的体现
      */
     public static final Cumulator COMPOSITE_CUMULATOR = new Cumulator() {
         @Override

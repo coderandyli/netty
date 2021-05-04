@@ -199,6 +199,7 @@ public final class PlatformDependent {
         }
 
         // We should always prefer direct buffers by default if we can use a Cleaner to release direct buffers.
+        // 使用堆外内存需要满足两个条件：1.有方法去释放堆外内存，2.io.netty.noPreferDirect == false
         DIRECT_BUFFER_PREFERRED = CLEANER != NOOP
                                   && !SystemPropertyUtil.getBoolean("io.netty.noPreferDirect", false);
         if (logger.isDebugEnabled()) {
@@ -289,6 +290,7 @@ public final class PlatformDependent {
 
     /**
      * Returns {@code true} if and only if the current platform is Android
+     * 判断是否是安卓平台
      */
     public static boolean isAndroid() {
         return PlatformDependent0.isAndroid();

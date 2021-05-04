@@ -34,6 +34,12 @@ import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
  *
  * Be aware that the {@link FileChannel} will be automatically closed once {@link #refCnt()} returns
  * {@code 0}.
+ * 【Netty内存使用技巧】- Zero Copy
+ * Netty的文件传输调用FileRegion包装的transferTo方法，可以直接将文件缓冲区的数据发送到目标Channel，避免通过循环write方式导致的内存拷贝问题
+ *
+ * 调用JDK的Zero-Copy接口
+ * {@link DefaultFileRegion#transferTo(WritableByteChannel, long)}
+ *
  */
 public class DefaultFileRegion extends AbstractReferenceCounted implements FileRegion {
 
