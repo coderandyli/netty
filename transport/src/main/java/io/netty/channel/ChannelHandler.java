@@ -26,10 +26,12 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Handles an I/O event or intercepts an I/O operation, and forwards it to its next handler in
+ * Handles an I/O event or intercepts(拦截) an I/O operation, and forwards it to its next handler in
  * its {@link ChannelPipeline}.
+ * 处理IO事件或者拦截IO请求，并将其转发到ChannelPipeline中的下一个处理程序。
  *
  * <h3>Sub-types</h3>
+ * 子类型
  * <p>
  * {@link ChannelHandler} itself does not provide many methods, but you usually have to implement one of its subtypes:
  * <ul>
@@ -174,6 +176,8 @@ import java.lang.annotation.Target;
  * {@link ChannelPipeline} to find out more about inbound and outbound operations,
  * what fundamental differences they have, how they flow in a  pipeline,  and how to handle
  * the operation in your application.
+ *
+ * 负责Channel中的逻辑处理
  */
 public interface ChannelHandler {
 

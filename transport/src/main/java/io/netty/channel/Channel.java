@@ -28,10 +28,13 @@ import java.net.SocketAddress;
 
 
 /**
- * A nexus to a network socket or a component which is capable of I/O
+ * A nexus(连接) to a network socket or a component(组件) which is capable of I/O
  * operations such as read, write, connect, and bind.
+ * 一种连接到网路套接字或者能够进行读、写、连接、绑定等IO操作的组件
+ *
  * <p>
  * A channel provides a user:
+ * channel为用户提供:
  * <ul>
  * <li>the current state of the channel (e.g. is it open? is it connected?),</li>
  * <li>the {@linkplain ChannelConfig configuration parameters} of the channel (e.g. receive buffer size),</li>
@@ -73,6 +76,8 @@ import java.net.SocketAddress;
  * It is important to call {@link #close()} or {@link #close(ChannelPromise)} to release all
  * resources once you are done with the {@link Channel}. This ensures all resources are
  * released in a proper way, i.e. filehandles.
+ *
+ * 在Netty中，Channel作为通信的载体。
  */
 public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparable<Channel> {
 
