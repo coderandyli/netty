@@ -35,6 +35,7 @@ public final class NettyRuntime {
 
         /**
          * Set the number of available processors.
+         * 设置可用处理器（CPU）数
          *
          * @param availableProcessors the number of available processors
          * @throws IllegalArgumentException if the specified number of available processors is non-positive
@@ -92,7 +93,7 @@ public final class NettyRuntime {
      * can be overridden by setting the system property "io.netty.availableProcessors" or by invoking
      * {@link #setAvailableProcessors(int)} before any calls to this method.
      *
-     * @return the configured number of available processors
+     * @return the configured number of available processors 返回可用cpu核数
      */
     public static int availableProcessors() {
         return holder.availableProcessors();

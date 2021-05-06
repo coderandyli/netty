@@ -403,6 +403,7 @@ public interface ChannelPipeline
     /**
      * Inserts {@link ChannelHandler}s at the last position of this pipeline.
      * 添加ChannelHandler到pipeline的最后位置
+     * - ChannelHandler将在IO线程组中执行，如想指定单独的线程组，可通过{@link #addLast(EventExecutorGroup, ChannelHandler...)}指定线程组
      *
      * @param handlers  the handlers to insert last
      *
@@ -411,9 +412,10 @@ public interface ChannelPipeline
 
     /**
      * Inserts {@link ChannelHandler}s at the last position of this pipeline.
+     * 插入ChannelHandler到最后位置（可指定线程组执行）
      *
      * @param group     the {@link EventExecutorGroup} which will be used to execute the {@link ChannelHandler}s
-     *                  methods.
+     *                  methods. ChannelHandler将在该线程组中执行 ( 默认在IO线程组中执行)
      * @param handlers  the handlers to insert last
      *
      */
