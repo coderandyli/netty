@@ -129,16 +129,23 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) {
+        // 初始化option
         setChannelOptions(channel, newOptionsArray(), logger);
+        // 初始化属性
         setAttributes(channel, newAttributesArray());
 
+        // 构建一个pipeline
         ChannelPipeline p = channel.pipeline();
 
+        // 以下四个属性是为了帮助初始化socketChannel
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+        // ChannelInitializer（相当于一个中介，媒婆） 一次性，初始化handler
+        // 负责添加一个ServerBootstrapAcceptor handler, 添加完成后，自己就移除了
+        // ServerBootstrapAcceptor handler: 负责接收客户端连接，创建连接后，对连接的初始化工作
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {

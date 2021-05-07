@@ -277,15 +277,16 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return regFuture;
         }
 
-        if (regFuture.isDone()) {
+        // 不能确定register完成，因为register会丢到nio event loop里面执行去了
+        if (regFuture.isDone()) { // 已经注册完成
             // At this point we know that the registration was complete and successful.
             ChannelPromise promise = channel.newPromise();
-            doBind0(regFuture, channel, localAddress, promise);
+            doBind0(regFuture, channel, localAddress, promise); // 执行doBind0方法
             return promise;
-        } else {
+        } else { // 没有注册完成
             // Registration future is almost always fulfilled already, but just in case it's not.
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
-            // 开始register
+            // 将bind操作封装成一个task，增加到Future的listener中，等待着register完成来通知再执行bind
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -307,10 +308,20 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
     }
 
+    /**
+     * 分为三部执行
+     *  1. 创建ServerSocketChannel
+     *  2. 初始化
+     *  3. 注册
+     * @return
+     */
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
+            // 1.创建ServerSocketChannel（通过泛型+反射+工厂创建）
             channel = channelFactory.newChannel();
+
+            // 初始化
             init(channel);
         } catch (Throwable t) {
             if (channel != null) {
@@ -323,6 +334,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
         }
 
+        // 注册（将ServerSocketChannel注册到NioEventLoop的selector中）
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

@@ -476,7 +476,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             AbstractChannel.this.eventLoop = eventLoop;
 
-            if (eventLoop.inEventLoop()) {
+            if (eventLoop.inEventLoop()) { // 判断自己的线程是否是NioEventLoop里面的线程
                 register0(promise);
             } else {
                 try {
@@ -513,10 +513,11 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 // user may already fire events through the pipeline in the ChannelFutureListener.
                 pipeline.invokeHandlerAddedIfNeeded();
 
-                safeSetSuccess(promise);
+                safeSetSuccess(promise); // //通知我们成功了
                 pipeline.fireChannelRegistered();
                 // Only fire a channelActive if the channel has never been registered. This prevents firing
                 // multiple channel actives if the channel is deregistered and re-registered.
+                // server socket 的注册不会走进下面if， server socket接受连接创建的socket可以走进去
                 if (isActive()) {
                     if (firstRegistration) {
                         pipeline.fireChannelActive();
@@ -566,6 +567,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 return;
             }
 
+            // 绑定后，才开始激活
             if (!wasActive && isActive()) {
                 invokeLater(new Runnable() {
                     @Override
