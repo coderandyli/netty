@@ -16,5 +16,6 @@
 
 /**
  * <em>Internal-use-only</em> logging API which is not allowed to be used outside Netty.
+ * 仅允许内部使用
  */
 package io.netty.util.internal.logging;

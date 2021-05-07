@@ -80,11 +80,11 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
      * {@link Channel}'s.
      */
     public ServerBootstrap group(EventLoopGroup parentGroup, EventLoopGroup childGroup) {
-        super.group(parentGroup);
+        super.group(parentGroup); //绑定bossGroup
         if (this.childGroup != null) {
             throw new IllegalStateException("childGroup set already");
         }
-        this.childGroup = ObjectUtil.checkNotNull(childGroup, "childGroup");
+        this.childGroup = ObjectUtil.checkNotNull(childGroup, "childGroup"); // 绑定workerGroup
         return this;
     }
 

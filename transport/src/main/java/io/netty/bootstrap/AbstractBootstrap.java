@@ -102,6 +102,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
     /**
      * 可以实现IO模型的灵活切换
+     *  - 利用反射创建对象
      *
      * The {@link Class} which is used to create {@link Channel} instances from.
      * You either use this or {@link #channelFactory(io.netty.channel.ChannelFactory)} if your
@@ -270,24 +271,32 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return doBind(ObjectUtil.checkNotNull(localAddress, "localAddress"));
     }
 
+    /**
+     * 真实的执行绑定操作
+     */
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        // 初始化并注册一个Channel
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
+        // 抛出异常直接返回
         if (regFuture.cause() != null) {
             return regFuture;
         }
 
-        // 不能确定register完成，因为register会丢到nio event loop里面执行去了
+        // 判断 initAndRegister()是否执行完毕(不能确定register完成，因为register会丢到nio event loop里面执行去了)
         if (regFuture.isDone()) { // 已经注册完成
             // At this point we know that the registration was complete and successful.
             ChannelPromise promise = channel.newPromise();
-            doBind0(regFuture, channel, localAddress, promise); // 执行doBind0方法
+            // 执行doBind0方法进行绑定
+            doBind0(regFuture, channel, localAddress, promise);
             return promise;
         } else { // 没有注册完成
             // Registration future is almost always fulfilled already, but just in case it's not.
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
             // 将bind操作封装成一个task，增加到Future的listener中，等待着register完成来通知再执行bind
             regFuture.addListener(new ChannelFutureListener() {
+
+                // 操作执行完毕会回调该方法
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
                     Throwable cause = future.cause();
@@ -319,6 +328,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         Channel channel = null;
         try {
             // 1.创建ServerSocketChannel（通过泛型+反射+工厂创建）
+            // 这里创建的channel是ServerSocketChannel（ .channel(NioServerSocketChannel.class) ）
             channel = channelFactory.newChannel();
 
             // 初始化

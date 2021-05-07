@@ -51,6 +51,9 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioServerSocketChannel.class);
 
+    /**
+     * 利用 SelectorProvider.openServerSocketChannel()，产生一个 ServerSocketChannel 对象
+     */
     private static ServerSocketChannel newSocket(SelectorProvider provider) {
         try {
             /**

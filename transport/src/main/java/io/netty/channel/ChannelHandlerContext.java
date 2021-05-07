@@ -95,6 +95,10 @@ import java.nio.channels.Channels;
  * the operation in your application.
  * 请参阅{@link ChannelHandler}和{@link ChannelPipeline}来了解更多关于入站和出站操作的信息，
  * 它们有哪些基本区别，它们如何在管道中流转，以及如何在应用程序中处理这些操作。
+ *
+ *
+ * 当 ChannelHandler 被添加到 ChannelPipeline 时，它将会被分配一个 ChannelHandlerContext，
+ * 它代表了 ChannelHandler 和 ChannelPipeline 之间的绑定。
  */
 public interface ChannelHandlerContext extends AttributeMap, ChannelInboundInvoker, ChannelOutboundInvoker {
 
