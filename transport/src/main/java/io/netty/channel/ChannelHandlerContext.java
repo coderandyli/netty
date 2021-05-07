@@ -30,6 +30,7 @@ import java.nio.channels.Channels;
  * {@link ChannelPipeline} as well as modify the {@link ChannelPipeline} it belongs to dynamically.
  *
  * <h3>Notify</h3>
+ *  通知
  *
  * You can notify the closest handler in the same {@link ChannelPipeline} by calling one of the various methods
  * provided here.
@@ -37,15 +38,19 @@ import java.nio.channels.Channels;
  * Please refer to {@link ChannelPipeline} to understand how an event flows.
  *
  * <h3>Modifying a pipeline</h3>
+ *  修改pipeline
  *
  * You can get the {@link ChannelPipeline} your handler belongs to by calling
  * {@link #pipeline()}.  A non-trivial application could insert, remove, or
  * replace handlers in the pipeline dynamically at runtime.
  *
  * <h3>Retrieving for later use</h3>
+ *  检索以供后续使用
  *
  * You can keep the {@link ChannelHandlerContext} for later use, such as
  * triggering an event outside the handler methods, even from a different thread.
+ * 你可以保留ChannelHandlerContext以供以后使用，例如在处理程序方法之外触发事件，甚至从不同的线程触发。
+ *
  * <pre>
  * public class MyHandler extends {@link ChannelDuplexHandler} {
  *
@@ -63,6 +68,7 @@ import java.nio.channels.Channels;
  * </pre>
  *
  * <h3>Storing stateful information</h3>
+ *  存储状态信息
  *
  * {@link #attr(AttributeKey)} allow you to
  * store and access stateful information that is related with a {@link ChannelHandler} / {@link Channel} and its
@@ -70,6 +76,7 @@ import java.nio.channels.Channels;
  * ways to manage stateful information.
  *
  * <h3>A handler can have more than one {@link ChannelHandlerContext}</h3>
+ * 一个Handler可以拥有一个或多个ChannelHandlerContext
  *
  * Please note that a {@link ChannelHandler} instance can be added to more than
  * one {@link ChannelPipeline}.  It means a single {@link ChannelHandler}
@@ -80,11 +87,14 @@ import java.nio.channels.Channels;
  * be marked as {@link io.netty.channel.ChannelHandler.Sharable}.
  *
  * <h3>Additional resources worth reading</h3>
+ *  值得阅读的其他资源
  * <p>
  * Please refer to the {@link ChannelHandler}, and
  * {@link ChannelPipeline} to find out more about inbound and outbound operations,
  * what fundamental differences they have, how they flow in a  pipeline,  and how to handle
  * the operation in your application.
+ * 请参阅{@link ChannelHandler}和{@link ChannelPipeline}来了解更多关于入站和出站操作的信息，
+ * 它们有哪些基本区别，它们如何在管道中流转，以及如何在应用程序中处理这些操作。
  */
 public interface ChannelHandlerContext extends AttributeMap, ChannelInboundInvoker, ChannelOutboundInvoker {
 
@@ -152,6 +162,7 @@ public interface ChannelHandlerContext extends AttributeMap, ChannelInboundInvok
 
     /**
      * Return the assigned {@link ChannelPipeline}
+     * 当前handler所属的pipeline
      */
     ChannelPipeline pipeline();
 
