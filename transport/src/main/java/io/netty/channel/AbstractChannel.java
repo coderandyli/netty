@@ -501,10 +501,12 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             try {
                 // check if the channel is still open as it could be closed in the mean time when the register
                 // call was outside of the eventLoop
+                // 确保 Channel 处于open
                 if (!promise.setUncancellable() || !ensureOpen(promise)) {
                     return;
                 }
                 boolean firstRegistration = neverRegistered;
+                // 真正的注册操作
                 doRegister();
                 neverRegistered = false;
                 registered = true;
@@ -519,6 +521,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 // multiple channel actives if the channel is deregistered and re-registered.
                 // server socket 的注册不会走进下面if， server socket接受连接创建的socket可以走进去
                 if (isActive()) {
+                    // 如果首次注册，发起pipeline的fireChannelActivw
                     if (firstRegistration) {
                         pipeline.fireChannelActive();
                     } else if (config().isAutoRead()) {

@@ -295,7 +295,6 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
             // 将bind操作封装成一个task，增加到Future的listener中，等待着register完成来通知再执行bind
             regFuture.addListener(new ChannelFutureListener() {
-
                 // 操作执行完毕会回调该方法
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -345,6 +344,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
 
         // 注册（将ServerSocketChannel注册到NioEventLoop的selector中）
+        // 这里的group返回的是前面的 boss NioEvenLoopGroup
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

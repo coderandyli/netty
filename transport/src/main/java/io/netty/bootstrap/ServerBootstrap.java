@@ -134,7 +134,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         // 初始化属性
         setAttributes(channel, newAttributesArray());
 
-        // 构建一个pipeline
+        // 获取绑定过的pipeline
         ChannelPipeline p = channel.pipeline();
 
         // 以下四个属性是为了帮助初始化socketChannel
@@ -143,14 +143,14 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
-        // ChannelInitializer（相当于一个中介，媒婆） 一次性，初始化handler
-        // 负责添加一个ServerBootstrapAcceptor handler, 添加完成后，自己就移除了
+        // ChannelInitializer（相当于一个中介，媒婆） 一次性，初始化handler（负责添加一个ServerBootstrapAcceptor handler, 添加完成后，自己就移除了）
         // ServerBootstrapAcceptor handler: 负责接收客户端连接，创建连接后，对连接的初始化工作
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {
                 final ChannelPipeline pipeline = ch.pipeline();
                 ChannelHandler handler = config.handler();
+                // 如果用户配置过Handler
                 if (handler != null) {
                     pipeline.addLast(handler);
                 }
@@ -158,6 +158,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                 ch.eventLoop().execute(new Runnable() {
                     @Override
                     public void run() {
+                        // 为NioServerSocketChannel的pipeline添加ServerBootstrapAcceptor处理器
+                        // 该Handler主要用来将新创建的NioSocketChannel注册到EventLoopGroup中
                         pipeline.addLast(new ServerBootstrapAcceptor(
                                 ch, currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
                     }
