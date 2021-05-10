@@ -63,11 +63,14 @@ import io.netty.channel.ChannelHandlerContext;
  * field by specifying <tt>initialBytesToStrip</tt>.  In this example, we
  * specified <tt>2</tt>, that is same with the length of the length field, to
  * strip the first two bytes.
+ * 因为我们可以获取内容的长度通过{@link ByteBuf#readableBytes()}， 你可以通过<tt>initialBytesToStrip</tt>去除length字段,
+ * 在这个示例中，我们指定<tt>2</tt>。
+ *
  * <pre>
  * lengthFieldOffset   = 0
  * lengthFieldLength   = 2
  * lengthAdjustment    = 0
- * <b>initialBytesToStrip</b> = <b>2</b> (= the length of the Length field)
+ * <b>initialBytesToStrip</b> = <b>2</b> (= the length of the Length field / length字段的长度)
  *
  * BEFORE DECODE (14 bytes)         AFTER DECODE (12 bytes)
  * +--------+----------------+      +----------------+
