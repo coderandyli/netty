@@ -39,6 +39,9 @@ import static io.netty.util.internal.StringUtil.EMPTY_STRING;
 import static io.netty.util.internal.StringUtil.NEWLINE;
 import static io.netty.util.internal.StringUtil.simpleClassName;
 
+/**
+ * 资源泄露检测器
+ */
 public class ResourceLeakDetector<T> {
 
     private static final String PROP_LEVEL_OLD = "io.netty.leakDetectionLevel";
@@ -57,25 +60,30 @@ public class ResourceLeakDetector<T> {
 
     /**
      * Represents the level of resource leak detection.
+     * 检测级别
      */
     public enum Level {
         /**
          * Disables resource leak detection.
+         * 不开启
          */
         DISABLED,
         /**
          * Enables simplistic sampling resource leak detection which reports there is a leak or not,
          * at the cost of small overhead (default).
+         * 一定频率启用，默认级别，只是告诉有没有泄露，并不告诉泄露位置
          */
         SIMPLE,
         /**
          * Enables advanced sampling resource leak detection which reports where the leaked object was accessed
          * recently at the cost of high overhead.
+         * 一定频率启用，会记录泄露可能的位置（占用的内存比SIMPLE）
          */
         ADVANCED,
         /**
          * Enables paranoid resource leak detection which reports where the leaked object was accessed recently,
          * at the cost of the highest possible overhead (for testing purposes only).
+         * 全量启用
          */
         PARANOID;
 
@@ -164,7 +172,9 @@ public class ResourceLeakDetector<T> {
     private final Set<DefaultResourceLeak<?>> allLeaks =
             Collections.newSetFromMap(new ConcurrentHashMap<DefaultResourceLeak<?>, Boolean>());
 
+    // 记录被GC掉的对象
     private final ReferenceQueue<Object> refQueue = new ReferenceQueue<Object>();
+
     private final Set<String> reportedLeaks =
             Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
@@ -245,14 +255,18 @@ public class ResourceLeakDetector<T> {
         return track0(obj);
     }
 
+    /**
+     * 追踪入口
+     */
     @SuppressWarnings("unchecked")
     private DefaultResourceLeak track0(T obj) {
         Level level = ResourceLeakDetector.level;
-        if (level == Level.DISABLED) {
+
+        if (level == Level.DISABLED) { //Level.DISABLED级别直接返回
             return null;
         }
 
-        if (level.ordinal() < Level.PARANOID.ordinal()) {
+        if (level.ordinal() < Level.PARANOID.ordinal()) { // 小于Level.PARANOID以一定频率追踪
             if ((PlatformDependent.threadLocalRandom().nextInt(samplingInterval)) == 0) {
                 reportLeak();
                 return new DefaultResourceLeak(obj, refQueue, allLeaks);
@@ -283,6 +297,9 @@ public class ResourceLeakDetector<T> {
         return logger.isErrorEnabled();
     }
 
+    /**
+     * 泄露检测并报告
+     */
     private void reportLeak() {
         if (!needReport()) {
             clearRefQueue();
@@ -290,12 +307,15 @@ public class ResourceLeakDetector<T> {
         }
 
         // Detect and report previous leaks.
+        // 检测并报告内存泄露
         for (;;) {
+            // refQueue记录了被GC的对象
             DefaultResourceLeak ref = (DefaultResourceLeak) refQueue.poll();
             if (ref == null) {
                 break;
             }
 
+            // 判断有没有泄露的关键
             if (!ref.dispose()) {
                 continue;
             }

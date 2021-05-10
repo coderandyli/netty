@@ -39,6 +39,9 @@ public abstract class InternalLoggerFactory {
 
     @SuppressWarnings("UnusedCatchParameter")
     private static InternalLoggerFactory newDefaultFactory(String name) {
+        /**
+         * 一个一个尝试，如果都找不到，使用jdk的日志框架
+         */
         InternalLoggerFactory f = useSlf4JLoggerFactory(name);
         if (f != null) {
             return f;
