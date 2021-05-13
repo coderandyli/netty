@@ -133,6 +133,9 @@ public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
     public static final ChannelOption<Boolean> DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION =
             valueOf("DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION");
 
+    /**
+     * 标识handle是否是绑定group(线程池)中唯一的唯一的executor, 默认为true.
+     */
     public static final ChannelOption<Boolean> SINGLE_EVENTEXECUTOR_PER_GROUP =
             valueOf("SINGLE_EVENTEXECUTOR_PER_GROUP");
 

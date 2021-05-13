@@ -124,6 +124,8 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         if (group == null) {
             return null;
         }
+
+        // 【001】 标识handle是否是绑定group(线程池)中唯一的executor, 默认为true.
         Boolean pinEventExecutor = channel.config().getOption(ChannelOption.SINGLE_EVENTEXECUTOR_PER_GROUP);
         if (pinEventExecutor != null && !pinEventExecutor) {
             return group.next();
@@ -138,6 +140,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         EventExecutor childExecutor = childExecutors.get(group);
         if (childExecutor == null) {
             childExecutor = group.next();
+            // 【001】 key是group，value是 childExecutor，
             childExecutors.put(group, childExecutor);
         }
         return childExecutor;

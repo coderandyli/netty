@@ -55,6 +55,8 @@ import java.util.concurrent.Future;
  * <p>
  * The {@link FlushConsolidationHandler} should be put as first {@link ChannelHandler} in the
  * {@link ChannelPipeline} to have the best effect.
+ * <p>
+ * 对flush的增强，核心方法是{@link #flush(ChannelHandlerContext)}
  */
 public class FlushConsolidationHandler extends ChannelDuplexHandler {
     private final int explicitFlushAfterFlushes;
@@ -91,7 +93,7 @@ public class FlushConsolidationHandler extends ChannelDuplexHandler {
     /**
      * Create new instance.
      *
-     * @param explicitFlushAfterFlushes the number of flushes after which an explicit flush will be done.
+     * @param explicitFlushAfterFlushes       the number of flushes after which an explicit flush will be done.
      * @param consolidateWhenNoReadInProgress whether to consolidate flushes even when no read loop is currently
      *                                        ongoing.
      */
@@ -118,23 +120,36 @@ public class FlushConsolidationHandler extends ChannelDuplexHandler {
         this.ctx = ctx;
     }
 
+    /**
+     * 同步     read --> writeAndFlush --> readComplete  （是保持顺序的）
+     * 异步     read --> readComplete --> writeAndFlush
+     */
     @Override
     public void flush(ChannelHandlerContext ctx) throws Exception {
-        if (readInProgress) {
+        // 根据业务线程是否复用IO线程两中（业务处理是否在独立线程池中）情况考虑，分为同步和异步
+        // 复用情况
+        if (readInProgress) { // 正在读的情况
             // If there is still a read in progress we are sure we will see a channelReadComplete(...) call. Thus
             // we only need to flush if we reach the explicitFlushAfterFlushes limit.
+            // 每explicitFlushAfterFlushes次，批量写（flush）一次
             if (++flushPendingCount == explicitFlushAfterFlushes) {
                 flushNow(ctx);
             }
+
+            // 以下是非复用情况：异步情况
         } else if (consolidateWhenNoReadInProgress) {
             // Flush immediately if we reach the threshold, otherwise schedule
+            // (业务异步化情况下) 开启consolidateWhenNoReadInProgress时，优化flush
+            // (比如没有读请求了，但是内部还是比较忙，没有消化的时候，所以还是会写响应)
             if (++flushPendingCount == explicitFlushAfterFlushes) {
                 flushNow(ctx);
             } else {
+                // 次数不到，开启一个scheduleFlush，延迟执行
                 scheduleFlush(ctx);
             }
         } else {
             // Always flush directly
+            // (业务异步化情况下) 没有开启consolidateWhenNoReadInProgress时，直接flush
             flushNow(ctx);
         }
     }
@@ -204,6 +219,7 @@ public class FlushConsolidationHandler extends ChannelDuplexHandler {
         ctx.flush();
     }
 
+    // 尽快，但是给个优化的机会
     private void scheduleFlush(final ChannelHandlerContext ctx) {
         if (nextScheduledFlush == null) {
             // Run as soon as possible, but still yield to give a chance for additional writes to enqueue.

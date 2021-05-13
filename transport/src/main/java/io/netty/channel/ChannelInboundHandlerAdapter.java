@@ -21,6 +21,8 @@ import io.netty.channel.ChannelHandlerMask.Skip;
  * Abstract base class for {@link ChannelInboundHandler} implementations which provide
  * implementations of all of their methods.
  *
+ * ChannelInboundHandler抽象类的实现类，提供了其所有方法的实现
+ *
  * <p>
  * This implementation just forward the operation to the next {@link ChannelHandler} in the
  * {@link ChannelPipeline}. Sub-classes may override a method implementation to change this.
