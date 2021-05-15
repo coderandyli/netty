@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Counts the number of read and written bytes for rate-limiting traffic.
+ * 统计限速流量的读写字节数
  * <p>
  * It computes the statistics for both inbound and outbound traffic periodically at the given
  * {@code checkInterval}, and calls the {@link AbstractTrafficShapingHandler#doAccounting(TrafficCounter)} method back.
@@ -127,6 +128,8 @@ public class TrafficCounter {
 
     /**
      * Delay between two captures
+     * 执行周期默认1秒（所以说流量控制是按照一定的周期进行的，相当于使用固定窗口的方式，而不是用令牌）
+     *
      */
     final AtomicLong checkInterval = new AtomicLong(
             AbstractTrafficShapingHandler.DEFAULT_CHECK_INTERVAL);
@@ -180,6 +183,7 @@ public class TrafficCounter {
 
     /**
      * Start the monitoring process.
+     * 启动一个监控进程
      */
     public synchronized void start() {
         if (monitorActive) {
@@ -283,6 +287,7 @@ public class TrafficCounter {
 
         this.name = ObjectUtil.checkNotNull(name, "name");
         this.trafficShapingHandler = trafficShapingHandler;
+        // 执行Traffic Counter的实际操作者
         this.executor = executor;
 
         init(checkInterval);

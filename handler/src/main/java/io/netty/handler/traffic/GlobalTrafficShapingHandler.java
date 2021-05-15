@@ -74,8 +74,10 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * Be sure to call {@link #release()} once this handler is not needed anymore to release all internal resources.
  * This will not shutdown the {@link EventExecutor} as it may be shared, so you need to do this by your own.
+ *
+ * 全局的限流（相当于在景区的大门处限流）
  */
-@Sharable
+@Sharable // 可共享的
 public class GlobalTrafficShapingHandler extends AbstractTrafficShapingHandler {
     /**
      * All queues per channel
@@ -102,6 +104,7 @@ public class GlobalTrafficShapingHandler extends AbstractTrafficShapingHandler {
 
     /**
      * Create the global TrafficCounter.
+     * 创建一个全局的TrafficCounter
      */
     void createGlobalTrafficCounter(ScheduledExecutorService executor) {
         TrafficCounter tc = new TrafficCounter(this,
@@ -331,6 +334,7 @@ public class GlobalTrafficShapingHandler extends AbstractTrafficShapingHandler {
     void submitWrite(final ChannelHandlerContext ctx, final Object msg,
             final long size, final long writedelay, final long now,
             final ChannelPromise promise) {
+        // 步骤一：根据channel的key，或对应的存delay数据的queue,没有则创建爱你
         Channel channel = ctx.channel();
         Integer key = channel.hashCode();
         PerChannel perChannel = channelQueues.get(key);
@@ -344,20 +348,34 @@ public class GlobalTrafficShapingHandler extends AbstractTrafficShapingHandler {
         boolean globalSizeExceeded = false;
         // write operations need synchronization
         synchronized (perChannel) {
+            // 步骤二：判断是否要delay, 如果不需要且queue中无数据，直接发
+
+            //如果queue有数据，即使不需要delay，也要将数据入queue，因为需要保证顺序
             if (writedelay == 0 && perChannel.messagesQueue.isEmpty()) {
                 trafficCounter.bytesRealWriteFlowControl(size);
                 ctx.write(msg, promise);
                 perChannel.lastWriteTimestamp = now;
                 return;
             }
+
+            // 步骤三：预计delay时间过长，则多等待15秒(maxTime)
             if (delay > maxTime && now + delay - perChannel.lastWriteTimestamp > maxTime) {
                 delay = maxTime;
             }
+
+            // 步骤四：数据进入queue
             newToSend = new ToSend(delay + now, msg, size, promise);
+            // 不管什么情况，都直接入queue, 所有可能会OOM，所以要根据queue的情况，改变可写标记位
             perChannel.messagesQueue.addLast(newToSend);
             perChannel.queueSize += size;
+            // 上下2个queueSize不一样，上面死少个s,代表channel的queue, 下面是global的
             queuesSize.addAndGet(size);
+
+            // 步骤5：判断是否queue的数量过多，如果是，设置写状态不可写
+
+            // 判断channel的queue size是否超标，或者需要停的时间过长，设置writable为false, 提醒让上面的handler不要写了
             checkWriteSuspend(ctx, delay, perChannel.queueSize);
+            // 判断global的queue(所有的queue加一起) size是否超标
             if (queuesSize.get() > maxGlobalWriteSize) {
                 globalSizeExceeded = true;
             }
@@ -365,11 +383,14 @@ public class GlobalTrafficShapingHandler extends AbstractTrafficShapingHandler {
         if (globalSizeExceeded) {
             setUserDefinedWritability(ctx, false);
         }
+
+        // 步骤六：开始schedule一个task来等待delay的时间再来发
         final long futureNow = newToSend.relativeTimeAction;
         final PerChannel forSchedule = perChannel;
-        ctx.executor().schedule(new Runnable() {
+        ctx.executor().schedule (new Runnable() {
             @Override
             public void run() {
+                // 发送数据
                 sendAllValid(ctx, forSchedule, futureNow);
             }
         }, delay, TimeUnit.MILLISECONDS);

@@ -46,6 +46,8 @@ import java.util.concurrent.TimeUnit;
  * <li><tt>getTrafficCounter</tt> allows you to have access to the TrafficCounter and so to stop
  * or start the monitoring, to change the checkInterval directly, or to have access to its values.</li>
  * </ul>
+ *
+ * 流量整形handler抽象类的
  */
 public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler {
     private static final InternalLogger logger =
@@ -74,6 +76,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
 
     /**
      * Traffic Counter
+     * 流量计数器
      */
     protected TrafficCounter trafficCounter;
 
@@ -454,6 +457,8 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
                     }
                 }
                 channel.attr(READ_SUSPENDED).set(false);
+
+                // 注册"读"事件，将之前暂停的"读"恢复
                 config.setAutoRead(true);
                 channel.read();
             }
@@ -473,12 +478,18 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
         channel.config().setAutoRead(true);
     }
 
+    /**
+     * 读流控
+     */
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
+        // 如果TS的handler放错了位置，接受的不是 byte buffer之类，则直接跳过
         long size = calculateSize(msg);
         long now = TrafficCounter.milliSecondFromNano();
+        // 如果数据不是bytebuffer时，size计算出是 -1，不会走流量整形(所以handler的位置很重要)
         if (size > 0) {
             // compute the number of ms to wait before reopening the channel
+            // 计算需要等待的时间(毫秒)
             long wait = trafficCounter.readTimeToWait(size, readLimit, maxTime, now);
             wait = checkWaitReadTime(ctx, wait, now);
             if (wait >= MINIMAL_WAIT) { // At least 10ms seems a minimal
@@ -491,6 +502,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
                             + isHandlerActive(ctx));
                 }
                 if (config.isAutoRead() && isHandlerActive(ctx)) {
+                    // 设置autoread标记，并且移除"读"兴趣 （相当于暂停了"读"）
                     config.setAutoRead(false);
                     channel.attr(READ_SUSPENDED).set(true);
                     // Create a Runnable to reactive the read if needed. If one was create before it will just be
@@ -498,9 +510,11 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
                     Attribute<Runnable> attr = channel.attr(REOPEN_TASK);
                     Runnable reopenTask = attr.get();
                     if (reopenTask == null) {
-                        reopenTask = new ReopenReadTimerTask(ctx);
+                        reopenTask = new ReopenReadTimerTask(ctx); // 创建一个到ReopenReadTimerTask
                         attr.set(reopenTask);
                     }
+
+                    // 过wait时间后，重新打开"读"功能
                     ctx.executor().schedule(reopenTask, wait, TimeUnit.MILLISECONDS);
                     if (logger.isDebugEnabled()) {
                         logger.debug("Suspend final status => " + config.isAutoRead() + ':'
@@ -510,6 +524,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
             }
         }
         informReadOperation(ctx, now);
+        // 当期数据放过
         ctx.fireChannelRead(msg);
     }
 
@@ -555,12 +570,17 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
         }
     }
 
+    /**
+     * 写流控
+     */
     @Override
     public void write(final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise)
             throws Exception {
+        // 计算大小，如果是非byte buffer返回-1，跳过限流逻辑
         long size = calculateSize(msg);
         long now = TrafficCounter.milliSecondFromNano();
-        if (size > 0) {
+
+        if (size > 0) { // 大于0, 需要写暂停
             // compute the number of ms to wait before continue with the channel
             long wait = trafficCounter.writeTimeToWait(size, writeLimit, maxTime, now);
             if (wait >= MINIMAL_WAIT) {
@@ -573,6 +593,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
             }
         }
         // to maintain order of write
+        // 只要这个地方 delay = 0, 表示不等待
         submitWrite(ctx, msg, size, 0, now, promise);
     }
 
@@ -592,6 +613,9 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
         super.channelRegistered(ctx);
     }
 
+    /**
+     * 设置写标记位
+     */
     void setUserDefinedWritability(ChannelHandlerContext ctx, boolean writable) {
         ChannelOutboundBuffer cob = ctx.channel().unsafe().outboundBuffer();
         if (cob != null) {
@@ -606,8 +630,10 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
      * @param queueSize the current queueSize
      */
     void checkWriteSuspend(ChannelHandlerContext ctx, long delay, long queueSize) {
+        // 可能会OOM或者需要等待的时间太长了，就不建议再写了
+        // 类似于旅游景点已经人满为患了，发个公告，建议大家不再进来了
         if (queueSize > maxWriteSize || delay > maxWriteDelay) {
-            setUserDefinedWritability(ctx, false);
+            setUserDefinedWritability(ctx, false); // 将写标记位置为false
         }
     }
     /**
@@ -643,7 +669,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
     }
 
     /**
-     * Calculate the size of the given {@link Object}.
+     * Calculate the size of the given {@link Object}.  计算带下
      *
      * This implementation supports {@link ByteBuf}, {@link ByteBufHolder} and {@link FileRegion}.
      * Sub-classes may override this.

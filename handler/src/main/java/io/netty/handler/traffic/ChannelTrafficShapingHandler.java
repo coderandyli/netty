@@ -61,6 +61,8 @@ import java.util.concurrent.TimeUnit;
  * <p>So the expected usage of those methods are to be used not too often,
  * accordingly to the traffic shaping configuration.</p></li>
  * </ul>
+ *
+ * 对特定channel进行限流，非共享的
  */
 public class ChannelTrafficShapingHandler extends AbstractTrafficShapingHandler {
     private final ArrayDeque<ToSend> messagesQueue = new ArrayDeque<ToSend>();

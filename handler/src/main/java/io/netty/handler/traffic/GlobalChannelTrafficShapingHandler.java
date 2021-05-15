@@ -82,6 +82,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * Be sure to call {@link #release()} once this handler is not needed anymore to release all internal resources.
  * This will not shutdown the {@link EventExecutor} as it may be shared, so you need to do this by your own.
+ *
+ * {@link GlobalChannelTrafficShapingHandler} 等价于 {@link GlobalTrafficShapingHandler} + {@link ChannelTrafficShapingHandler}
  */
 @Sharable
 public class GlobalChannelTrafficShapingHandler extends AbstractTrafficShapingHandler {
@@ -164,7 +166,7 @@ public class GlobalChannelTrafficShapingHandler extends AbstractTrafficShapingHa
      * Create a new instance.
      *
      * @param executor
-     *            the {@link ScheduledExecutorService} to use for the {@link TrafficCounter}.
+     *            the {@link ScheduledExecutorService} to use for the {@link TrafficCounter}. 代表的executor，帮助我们周期性的计算，是不是要流控的一些统计数据
      * @param writeGlobalLimit
      *            0 or a limit in bytes/s
      * @param readGlobalLimit
@@ -176,8 +178,9 @@ public class GlobalChannelTrafficShapingHandler extends AbstractTrafficShapingHa
      * @param checkInterval
      *            The delay between two computations of performances for
      *            channels or 0 if no stats are to be computed.
+     *            表示{@link TrafficCounter}周期性的执行时间
      * @param maxTime
-     *            The maximum delay to wait in case of traffic excess.
+     *            The maximum delay to wait in case of traffic excess.  最多暂停的时间
      */
     public GlobalChannelTrafficShapingHandler(ScheduledExecutorService executor,
             long writeGlobalLimit, long readGlobalLimit,

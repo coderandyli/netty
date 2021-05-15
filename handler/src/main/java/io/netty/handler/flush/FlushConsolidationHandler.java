@@ -59,6 +59,9 @@ import java.util.concurrent.Future;
  * 对flush的增强，核心方法是{@link #flush(ChannelHandlerContext)}
  */
 public class FlushConsolidationHandler extends ChannelDuplexHandler {
+    /**
+     * 多少次后进行flush
+     */
     private final int explicitFlushAfterFlushes;
     private final boolean consolidateWhenNoReadInProgress;
     private final Runnable flushTask;
@@ -93,7 +96,7 @@ public class FlushConsolidationHandler extends ChannelDuplexHandler {
     /**
      * Create new instance.
      *
-     * @param explicitFlushAfterFlushes       the number of flushes after which an explicit flush will be done.
+     * @param explicitFlushAfterFlushes       the number of flushes after which an explicit flush will be done. 多少次之后才进行一次批量flush
      * @param consolidateWhenNoReadInProgress whether to consolidate flushes even when no read loop is currently
      *                                        ongoing.
      */
