@@ -17,6 +17,7 @@ package io.netty.handler.ipfilter;
 
 /**
  * Used in {@link IpFilterRule} to decide if a matching IP Address should be allowed or denied to connect.
+ * 使用在 {@link IpFilterRule} 中，用于决定 ip地址应该被允许或拒绝连接
  */
 public enum IpFilterRuleType {
     ACCEPT,

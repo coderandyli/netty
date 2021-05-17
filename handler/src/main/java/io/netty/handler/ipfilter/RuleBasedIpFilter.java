@@ -39,6 +39,8 @@ import java.util.List;
  *
  * <p> Consider using {@link IpSubnetFilter} for better performance while not as
  * general purpose as this filter. </p>
+ *
+ * 基于规则的IP过滤
  */
 @Sharable
 public class RuleBasedIpFilter extends AbstractRemoteAddressFilter<InetSocketAddress> {

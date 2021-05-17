@@ -29,18 +29,25 @@ import java.util.Set;
 /**
  * This class allows one to ensure that at all times for every IP address there is at most one
  * {@link Channel} connected to the server.
+ *
+ * 同一个IP只能建一个连接
+ *
  */
 @ChannelHandler.Sharable
 public class UniqueIpFilter extends AbstractRemoteAddressFilter<InetSocketAddress> {
-
+    /**
+     * 记录remote ip 的set
+     */
     private final Set<InetAddress> connected = new ConcurrentSet<InetAddress>();
 
     @Override
     protected boolean accept(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) throws Exception {
         final InetAddress remoteIp = remoteAddress.getAddress();
+        // 判断这个IP有没有在连接
         if (!connected.add(remoteIp)) {
             return false;
         } else {
+            // 关闭连接时，从connected中移除掉remote ip
             ctx.channel().closeFuture().addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {

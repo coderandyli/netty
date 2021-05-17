@@ -162,6 +162,8 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
      * requested write operation immediately.  Any write requests made when
      * this method returns {@code false} are queued until the I/O thread is
      * ready to process the queued write requests.
+     *
+     * 当且仅当I/O线程将立即执行请求的写操作时返回{@code true}。当这个方法返回{@code false}时，任何写请求都将排队，直到I/O线程准备好处理排队的写请求。
      */
     boolean isWritable();
 
