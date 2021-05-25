@@ -250,6 +250,7 @@ import java.util.NoSuchElementException;
  *
  * 【ChannePipeline是 {@link ChannelHandler}的列表，用于处理或者拦截入站事件和出站操作】
  * 默认实现类{@link DefaultChannelPipeline}
+ * 基于【职责链模式】
  */
 public interface ChannelPipeline
         extends ChannelInboundInvoker, ChannelOutboundInvoker, Iterable<Entry<String, ChannelHandler>> {

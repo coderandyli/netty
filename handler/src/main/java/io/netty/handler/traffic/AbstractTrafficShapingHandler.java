@@ -48,6 +48,7 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  *
  * 流量整形handler抽象类的
+ * 【模板模式】的应用
  */
 public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler {
     private static final InternalLogger logger =

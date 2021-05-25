@@ -161,6 +161,8 @@ import java.util.concurrent.TimeUnit;
  *     // Connection established successfully
  * }
  * </pre>
+ *
+ * {@link #addListener(GenericFutureListener)} 【观察者模式】的体现
  */
 public interface ChannelFuture extends Future<Void> {
 
