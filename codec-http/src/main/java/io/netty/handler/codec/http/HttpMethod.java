@@ -18,7 +18,7 @@ package io.netty.handler.codec.http;
 import io.netty.util.AsciiString;
 
 import static io.netty.util.internal.MathUtil.findNextPositivePowerOfTwo;
-import static io.netty.util.internal.ObjectUtil.checkNotNull;
+import static io.netty.util.internal.ObjectUtil.checkNonEmptyAfterTrim;
 
 /**
  * The request method of HTTP or its derived protocols, such as
@@ -106,6 +106,14 @@ public class HttpMethod implements Comparable<HttpMethod> {
      * will be returned.  Otherwise, a new instance will be returned.
      */
     public static HttpMethod valueOf(String name) {
+        // fast-path
+        if (name == HttpMethod.GET.name()) {
+            return HttpMethod.GET;
+        }
+        if (name == HttpMethod.POST.name()) {
+            return HttpMethod.POST;
+        }
+        // "slow"-path
         HttpMethod result = methodMap.get(name);
         return result != null ? result : new HttpMethod(name);
     }
@@ -120,10 +128,7 @@ public class HttpMethod implements Comparable<HttpMethod> {
      * <a href="https://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>
      */
     public HttpMethod(String name) {
-        name = checkNotNull(name, "name").trim();
-        if (name.isEmpty()) {
-            throw new IllegalArgumentException("empty name");
-        }
+        name = checkNonEmptyAfterTrim(name, "name");
 
         for (int i = 0; i < name.length(); i ++) {
             char c = name.charAt(i);

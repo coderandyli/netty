@@ -19,11 +19,11 @@ import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class WebSocketClientHandshaker07Test extends WebSocketClientHandshakerTest {
 
@@ -31,7 +31,7 @@ public class WebSocketClientHandshaker07Test extends WebSocketClientHandshakerTe
     public void testHostHeaderPreserved() {
         URI uri = URI.create("ws://localhost:9999");
         WebSocketClientHandshaker handshaker = newHandshaker(uri, null,
-                new DefaultHttpHeaders().set(HttpHeaderNames.HOST, "test.netty.io"), false);
+                new DefaultHttpHeaders().set(HttpHeaderNames.HOST, "test.netty.io"), false, true);
 
         FullHttpRequest request = handshaker.newHandshakeRequest();
         try {
@@ -44,10 +44,10 @@ public class WebSocketClientHandshaker07Test extends WebSocketClientHandshakerTe
 
     @Override
     protected WebSocketClientHandshaker newHandshaker(URI uri, String subprotocol, HttpHeaders headers,
-                                                      boolean absoluteUpgradeUrl) {
+                                                      boolean absoluteUpgradeUrl, boolean generateOriginHeader) {
         return new WebSocketClientHandshaker07(uri, WebSocketVersion.V07, subprotocol, false, headers,
           1024, true, false, 10000,
-          absoluteUpgradeUrl);
+          absoluteUpgradeUrl, generateOriginHeader);
     }
 
     @Override

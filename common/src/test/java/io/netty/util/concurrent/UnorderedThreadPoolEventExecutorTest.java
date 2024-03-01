@@ -15,12 +15,17 @@
  */
 package io.netty.util.concurrent;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Exchanger;
 import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class UnorderedThreadPoolEventExecutorTest {
 
@@ -30,34 +35,51 @@ public class UnorderedThreadPoolEventExecutorTest {
         UnorderedThreadPoolEventExecutor executor = new UnorderedThreadPoolEventExecutor(1);
 
         try {
+            // Having the first task wait on an exchanger allow us to make sure that the lister on the second task
+            // is not added *after* the promise completes. We need to do this to prevent a race where the second task
+            // and listener are completed before the DefaultPromise.NotifyListeners task get to run, which means our
+            // queue inspection might observe this task after the CountDownLatch opens.
+            final Exchanger<Void> exchanger = new Exchanger<Void>();
             final CountDownLatch latch = new CountDownLatch(3);
             Runnable task = new Runnable() {
                 @Override
                 public void run() {
+                    try {
+                        exchanger.exchange(null);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
                     latch.countDown();
                 }
             };
             executor.execute(task);
-            Future<?> future = executor.submit(task).addListener(new FutureListener<Object>() {
+            Future<?> future = executor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    latch.countDown();
+                }
+            }).addListener(new FutureListener<Object>() {
                 @Override
                 public void operationComplete(Future<Object> future) throws Exception {
                     latch.countDown();
                 }
             });
+            exchanger.exchange(null);
             latch.await();
             future.syncUninterruptibly();
 
             // Now just check if the queue stays empty multiple times. This is needed as the submit to execute(...)
             // by DefaultPromise may happen in an async fashion
             for (int i = 0; i < 10000; i++) {
-                Assert.assertTrue(executor.getQueue().isEmpty());
+                assertTrue(executor.getQueue().isEmpty());
             }
         } finally {
             executor.shutdownGracefully();
         }
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void scheduledAtFixedRateMustRunTaskRepeatedly() throws InterruptedException {
         UnorderedThreadPoolEventExecutor executor = new UnorderedThreadPoolEventExecutor(1);
         final CountDownLatch latch = new CountDownLatch(3);
@@ -87,7 +109,7 @@ public class UnorderedThreadPoolEventExecutorTest {
                 }
             });
 
-            Assert.assertEquals(expected, f.get());
+            assertEquals(expected, f.get());
         } finally {
             executor.shutdownGracefully();
         }
@@ -105,7 +127,7 @@ public class UnorderedThreadPoolEventExecutorTest {
                 }
             });
 
-            Assert.assertSame(cause, f.await().cause());
+            assertSame(cause, f.await().cause());
         } finally {
             executor.shutdownGracefully();
         }

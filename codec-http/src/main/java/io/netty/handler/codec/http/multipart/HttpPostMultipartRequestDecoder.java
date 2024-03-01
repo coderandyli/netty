@@ -30,11 +30,14 @@ import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.ErrorDataDec
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.MultiPartStatus;
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.NotEnoughDataDecoderException;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.InternalThreadLocalMap;
+import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.StringUtil;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,7 +98,7 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
     /**
      * If multipart, this is the boundary for the global multipart
      */
-    private String multipartDataBoundary;
+    private final String multipartDataBoundary;
 
     /**
      * If multipart, there could be internal multiparts (mixed) to the global
@@ -177,30 +180,38 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
         this.factory = checkNotNull(factory, "factory");
         // Fill default values
 
-        setMultipart(this.request.headers().get(HttpHeaderNames.CONTENT_TYPE));
-        if (request instanceof HttpContent) {
-            // Offer automatically if the given request is als type of HttpContent
-            // See #1089
-            offer((HttpContent) request);
-        } else {
-            parseBody();
+        String contentTypeValue = this.request.headers().get(HttpHeaderNames.CONTENT_TYPE);
+        if (contentTypeValue == null) {
+            throw new ErrorDataDecoderException("No '" + HttpHeaderNames.CONTENT_TYPE + "' header present.");
         }
-    }
 
-    /**
-     * Set from the request ContentType the multipartDataBoundary and the possible charset.
-     */
-    private void setMultipart(String contentType) {
-        String[] dataBoundary = HttpPostRequestDecoder.getMultipartDataBoundary(contentType);
+        String[] dataBoundary = HttpPostRequestDecoder.getMultipartDataBoundary(contentTypeValue);
         if (dataBoundary != null) {
             multipartDataBoundary = dataBoundary[0];
             if (dataBoundary.length > 1 && dataBoundary[1] != null) {
-                charset = Charset.forName(dataBoundary[1]);
+                try {
+                    this.charset = Charset.forName(dataBoundary[1]);
+                } catch (IllegalCharsetNameException e) {
+                    throw new ErrorDataDecoderException(e);
+                }
             }
         } else {
             multipartDataBoundary = null;
         }
         currentStatus = MultiPartStatus.HEADERDELIMITER;
+
+        try {
+            if (request instanceof HttpContent) {
+                // Offer automatically if the given request is als type of HttpContent
+                // See #1089
+                offer((HttpContent) request);
+            } else {
+                parseBody();
+            }
+        } catch (Throwable e) {
+            destroy();
+            PlatformDependent.throwException(e);
+        }
     }
 
     private void checkDestroyed() {
@@ -325,13 +336,8 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
 
         ByteBuf buf = content.content();
         if (undecodedChunk == null) {
-            undecodedChunk = isLastChunk ?
-                    // Take a slice instead of copying when the first chunk is also the last
-                    // as undecodedChunk.writeBytes will never be called.
-                    buf.retainedSlice() :
-                    // Maybe we should better not copy here for performance reasons but this will need
-                    // more care by the caller to release the content in a correct manner later
-                    // So maybe something to optimize on a later stage
+            undecodedChunk =
+                    // Since the Handler will release the incoming later on, we need to copy it
                     //
                     // We are explicit allocate a buffer and NOT calling copy() as otherwise it may set a maxCapacity
                     // which is not really usable for us as we may exceed it once we add more bytes.
@@ -766,6 +772,18 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
                                 throw new ErrorDataDecoderException(e);
                             }
                             currentFieldAttributes.put(HttpHeaderValues.CHARSET, attribute);
+                        } else if (contents[i].contains("=")) {
+                            String name = StringUtil.substringBefore(contents[i], '=');
+                            String values = StringUtil.substringAfter(contents[i], '=');
+                            Attribute attribute;
+                            try {
+                                attribute = factory.createAttribute(request, cleanString(name), values);
+                            } catch (NullPointerException e) {
+                                throw new ErrorDataDecoderException(e);
+                            } catch (IllegalArgumentException e) {
+                                throw new ErrorDataDecoderException(e);
+                            }
+                            currentFieldAttributes.put(name, attribute);
                         } else {
                             Attribute attribute;
                             try {
@@ -947,8 +965,15 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
      */
     @Override
     public void destroy() {
-        // Release all data items, including those not yet pulled
+        // Release all data items, including those not yet pulled, only file based items
         cleanFiles();
+        // Clean Memory based data
+        for (InterfaceHttpData httpData : bodyListHttpData) {
+            // Might have been already released by the user
+            if (httpData.refCnt() > 0) {
+                httpData.release();
+            }
+        }
 
         destroyed = true;
 
@@ -1159,8 +1184,26 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
         final byte[] bdelimiter = delimiter.getBytes(httpData.getCharset());
         int posDelimiter = HttpPostBodyUtil.findDelimiter(undecodedChunk, startReaderIndex, bdelimiter, true);
         if (posDelimiter < 0) {
-            // Not found but however perhaps because incomplete so search LF or CRLF
-            posDelimiter = HttpPostBodyUtil.findLineBreak(undecodedChunk, startReaderIndex);
+            // Not found but however perhaps because incomplete so search LF or CRLF from the end.
+            // Possible last bytes contain partially delimiter
+            // (delimiter is possibly partially there, at least 1 missing byte),
+            // therefore searching last delimiter.length +1 (+1 for CRLF instead of LF)
+            int readableBytes = undecodedChunk.readableBytes();
+            int lastPosition = readableBytes - bdelimiter.length - 1;
+            if (lastPosition < 0) {
+                // Not enough bytes, but at most delimiter.length bytes available so can still try to find CRLF there
+                lastPosition = 0;
+            }
+            posDelimiter = HttpPostBodyUtil.findLastLineBreak(undecodedChunk, startReaderIndex + lastPosition);
+            // No LineBreak, however CR can be at the end of the buffer, LF not yet there (issue #11668)
+            // Check if last CR (if any) shall not be in the content (definedLength vs actual length + buffer - 1)
+            if (posDelimiter < 0 &&
+                httpData.definedLength() == httpData.length() + readableBytes - 1 &&
+                undecodedChunk.getByte(readableBytes + startReaderIndex - 1) == HttpConstants.CR) {
+                // Last CR shall precede a future LF
+                lastPosition = 0;
+                posDelimiter = readableBytes - 1;
+            }
             if (posDelimiter < 0) {
                 // not found so this chunk can be fully added
                 ByteBuf content = undecodedChunk.copy();
@@ -1172,18 +1215,21 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
                 undecodedChunk.readerIndex(startReaderIndex);
                 undecodedChunk.writerIndex(startReaderIndex);
                 return false;
-            } else if (posDelimiter > 0) {
-                // Not fully but still some bytes to provide: httpData is not yet finished since delimiter not found
-                ByteBuf content = undecodedChunk.copy(startReaderIndex, posDelimiter);
-                try {
-                    httpData.addContent(content, false);
-                } catch (IOException e) {
-                    throw new ErrorDataDecoderException(e);
-                }
-                rewriteCurrentBuffer(undecodedChunk, posDelimiter);
+            }
+            // posDelimiter is not from startReaderIndex but from startReaderIndex + lastPosition
+            posDelimiter += lastPosition;
+            if (posDelimiter == 0) {
+                // Nothing to add
                 return false;
             }
-            // Empty chunk or so
+            // Not fully but still some bytes to provide: httpData is not yet finished since delimiter not found
+            ByteBuf content = undecodedChunk.copy(startReaderIndex, posDelimiter);
+            try {
+                httpData.addContent(content, false);
+            } catch (IOException e) {
+                throw new ErrorDataDecoderException(e);
+            }
+            rewriteCurrentBuffer(undecodedChunk, posDelimiter);
             return false;
         }
         // Delimiter found at posDelimiter, including LF or CRLF, so httpData has its last chunk
@@ -1332,7 +1378,7 @@ public class HttpPostMultipartRequestDecoder implements InterfaceHttpPostRequest
             }
         }
         values.add(svalue.substring(start));
-        return values.toArray(new String[0]);
+        return values.toArray(EmptyArrays.EMPTY_STRINGS);
     }
 
     /**

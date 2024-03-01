@@ -15,7 +15,8 @@
  */
 package io.netty.handler.traffic;
 
-import io.netty.util.internal.ObjectUtil;
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
+import static io.netty.util.internal.ObjectUtil.checkNotNullWithIAE;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -256,7 +257,7 @@ public class TrafficCounter {
      */
     public TrafficCounter(ScheduledExecutorService executor, String name, long checkInterval) {
 
-        this.name = ObjectUtil.checkNotNull(name, "name");
+        this.name = checkNotNull(name, "name");
         trafficShapingHandler = null;
         this.executor = executor;
 
@@ -280,14 +281,8 @@ public class TrafficCounter {
     public TrafficCounter(
             AbstractTrafficShapingHandler trafficShapingHandler, ScheduledExecutorService executor,
             String name, long checkInterval) {
-
-        if (trafficShapingHandler == null) {
-            throw new IllegalArgumentException("trafficShapingHandler");
-        }
-
-        this.name = ObjectUtil.checkNotNull(name, "name");
-        this.trafficShapingHandler = trafficShapingHandler;
-        // 执行Traffic Counter的实际操作者
+        this.name = checkNotNull(name, "name");
+        this.trafficShapingHandler = checkNotNullWithIAE(trafficShapingHandler, "trafficShapingHandler");
         this.executor = executor;
 
         init(checkInterval);

@@ -26,6 +26,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.util.internal.PlatformDependent;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -109,10 +110,41 @@ public class WebSocketClientHandshaker00 extends WebSocketClientHandshaker {
      *            clear HTTP
      */
     WebSocketClientHandshaker00(URI webSocketURL, WebSocketVersion version, String subprotocol,
+            HttpHeaders customHeaders, int maxFramePayloadLength,
+            long forceCloseTimeoutMillis, boolean absoluteUpgradeUrl) {
+        this(webSocketURL, version, subprotocol, customHeaders, maxFramePayloadLength, forceCloseTimeoutMillis,
+                absoluteUpgradeUrl, true);
+    }
+
+    /**
+     * Creates a new instance with the specified destination WebSocket location and version to initiate.
+     *
+     * @param webSocketURL
+     *            URL for web socket communications. e.g "ws://myhost.com/mypath". Subsequent web socket frames will be
+     *            sent to this URL.
+     * @param version
+     *            Version of web socket specification to use to connect to the server
+     * @param subprotocol
+     *            Sub protocol request sent to the server.
+     * @param customHeaders
+     *            Map of custom headers to add to the client request
+     * @param maxFramePayloadLength
+     *            Maximum length of a frame's payload
+     * @param forceCloseTimeoutMillis
+     *            Close the connection if it was not closed by the server after timeout specified
+     * @param  absoluteUpgradeUrl
+     *            Use an absolute url for the Upgrade request, typically when connecting through an HTTP proxy over
+     *            clear HTTP
+     * @param generateOriginHeader
+     *            Allows to generate the `Origin` header value for handshake request
+     *            according to the given webSocketURL
+     */
+    WebSocketClientHandshaker00(URI webSocketURL, WebSocketVersion version, String subprotocol,
                                 HttpHeaders customHeaders, int maxFramePayloadLength,
-                                long forceCloseTimeoutMillis, boolean absoluteUpgradeUrl) {
+                                long forceCloseTimeoutMillis, boolean absoluteUpgradeUrl,
+                                boolean generateOriginHeader) {
         super(webSocketURL, version, subprotocol, customHeaders, maxFramePayloadLength, forceCloseTimeoutMillis,
-                absoluteUpgradeUrl);
+                absoluteUpgradeUrl, generateOriginHeader);
     }
 
     /**
@@ -181,15 +213,22 @@ public class WebSocketClientHandshaker00 extends WebSocketClientHandshaker {
 
         if (customHeaders != null) {
             headers.add(customHeaders);
+            if (!headers.contains(HttpHeaderNames.HOST)) {
+                // Only add HOST header if customHeaders did not contain it.
+                //
+                // See https://github.com/netty/netty/issues/10101
+                headers.set(HttpHeaderNames.HOST, websocketHostValue(wsURL));
+            }
+        } else {
+            headers.set(HttpHeaderNames.HOST, websocketHostValue(wsURL));
         }
 
         headers.set(HttpHeaderNames.UPGRADE, HttpHeaderValues.WEBSOCKET)
                .set(HttpHeaderNames.CONNECTION, HttpHeaderValues.UPGRADE)
-               .set(HttpHeaderNames.HOST, websocketHostValue(wsURL))
                .set(HttpHeaderNames.SEC_WEBSOCKET_KEY1, key1)
                .set(HttpHeaderNames.SEC_WEBSOCKET_KEY2, key2);
 
-        if (!headers.contains(HttpHeaderNames.ORIGIN)) {
+        if (generateOriginHeader && !headers.contains(HttpHeaderNames.ORIGIN)) {
             headers.set(HttpHeaderNames.ORIGIN, websocketOriginValue(wsURL));
         }
 
@@ -254,7 +293,7 @@ public class WebSocketClientHandshaker00 extends WebSocketClientHandshaker {
         char[] randomChars = new char[count];
         int randCount = 0;
         while (randCount < count) {
-            int rand = (int) (Math.random() * 0x7e + 0x21);
+            int rand = PlatformDependent.threadLocalRandom().nextInt(0x7e) + 0x21;
             if (0x21 < rand && rand < 0x2f || 0x3a < rand && rand < 0x7e) {
                 randomChars[randCount] = (char) rand;
                 randCount += 1;

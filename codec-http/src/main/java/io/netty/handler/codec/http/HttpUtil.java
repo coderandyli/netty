@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import io.netty.handler.codec.Headers;
 import io.netty.util.AsciiString;
 import io.netty.util.CharsetUtil;
 import io.netty.util.NetUtil;
@@ -32,6 +31,7 @@ import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.UnstableApi;
 
 import static io.netty.util.internal.StringUtil.COMMA;
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 /**
  * Utility methods useful in the HTTP context.
@@ -49,8 +49,15 @@ public final class HttpUtil {
      * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
      */
     public static boolean isOriginForm(URI uri) {
-        return uri.getScheme() == null && uri.getSchemeSpecificPart() == null &&
-               uri.getHost() == null && uri.getAuthority() == null;
+        return isOriginForm(uri.toString());
+    }
+
+    /**
+     * Determine if a string uri is in origin-form according to
+     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
+     */
+    public static boolean isOriginForm(String uri) {
+        return uri.startsWith("/");
     }
 
     /**
@@ -58,10 +65,15 @@ public final class HttpUtil {
      * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
      */
     public static boolean isAsteriskForm(URI uri) {
-        return "*".equals(uri.getPath()) &&
-                uri.getScheme() == null && uri.getSchemeSpecificPart() == null &&
-                uri.getHost() == null && uri.getAuthority() == null && uri.getQuery() == null &&
-                uri.getFragment() == null;
+        return isAsteriskForm(uri.toString());
+    }
+
+    /**
+     * Determine if a string uri is in asterisk-form according to
+     * <a href="https://tools.ietf.org/html/rfc7230#section-5.3">rfc7230, 5.3</a>.
+     */
+    public static boolean isAsteriskForm(String uri) {
+        return "*".equals(uri);
     }
 
     /**
@@ -196,8 +208,9 @@ public final class HttpUtil {
      * Get an {@code int} representation of {@link #getContentLength(HttpMessage, long)}.
      *
      * @return the content length or {@code defaultValue} if this message does
-     *         not have the {@code "Content-Length"} header or its value is not
-     *         a number. Not to exceed the boundaries of integer.
+     *         not have the {@code "Content-Length"} header.
+     *
+     * @throws NumberFormatException if the {@code "Content-Length"} header does not parse as an int
      */
     public static int getContentLength(HttpMessage message, int defaultValue) {
         return (int) Math.min(Integer.MAX_VALUE, getContentLength(message, (long) defaultValue));
@@ -207,7 +220,7 @@ public final class HttpUtil {
      * Returns the content length of the specified web socket message. If the
      * specified message is not a web socket message, {@code -1} is returned.
      */
-    private static int getWebSocketContentLength(HttpMessage message) {
+    static int getWebSocketContentLength(HttpMessage message) {
         // WebSocket messages have constant content-lengths.
         HttpHeaders h = message.headers();
         if (message instanceof HttpRequest) {
@@ -394,10 +407,15 @@ public final class HttpUtil {
      */
     public static Charset getCharset(CharSequence contentTypeValue, Charset defaultCharset) {
         if (contentTypeValue != null) {
-            CharSequence charsetCharSequence = getCharsetAsSequence(contentTypeValue);
-            if (charsetCharSequence != null) {
+            CharSequence charsetRaw = getCharsetAsSequence(contentTypeValue);
+            if (charsetRaw != null) {
+                if (charsetRaw.length() > 2) { // at least contains 2 quotes(")
+                    if (charsetRaw.charAt(0) == '"' && charsetRaw.charAt(charsetRaw.length() - 1) == '"') {
+                        charsetRaw = charsetRaw.subSequence(1, charsetRaw.length() - 1);
+                    }
+                }
                 try {
-                    return Charset.forName(charsetCharSequence.toString());
+                    return Charset.forName(charsetRaw.toString());
                 } catch (IllegalCharsetNameException ignored) {
                     // just return the default charset
                 } catch (UnsupportedCharsetException ignored) {
@@ -597,19 +615,14 @@ public final class HttpUtil {
         }
         // Ensure we not allow sign as part of the content-length:
         // See https://github.com/squid-cache/squid/security/advisories/GHSA-qf3v-rc95-96j5
-        if (!Character.isDigit(firstField.charAt(0))) {
+        if (firstField.isEmpty() || !Character.isDigit(firstField.charAt(0))) {
             // Reject the message as invalid
             throw new IllegalArgumentException(
                     "Content-Length value is not a number: " + firstField);
         }
         try {
             final long value = Long.parseLong(firstField);
-            if (value < 0) {
-                // Reject the message as invalid
-                throw new IllegalArgumentException(
-                        "Content-Length value must be >=0: " + value);
-            }
-            return value;
+            return checkPositiveOrZero(value, "Content-Length value");
         } catch (NumberFormatException e) {
             // Reject the message as invalid
             throw new IllegalArgumentException(

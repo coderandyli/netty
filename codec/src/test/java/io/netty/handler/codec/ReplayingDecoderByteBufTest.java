@@ -19,9 +19,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.CharsetUtil;
 import io.netty.util.Signal;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ReplayingDecoderByteBufTest {
 
@@ -103,4 +104,26 @@ public class ReplayingDecoderByteBufTest {
         buf.release();
     }
 
+    // See https://github.com/netty/netty/issues/13455
+    @Test
+    void testRetainedSlice() {
+        ByteBuf buf = Unpooled.buffer(10);
+        int i = 0;
+        while (buf.isWritable()) {
+            buf.writeByte(i++);
+        }
+        ReplayingDecoderByteBuf buffer = new ReplayingDecoderByteBuf(buf);
+        ByteBuf slice = buffer.retainedSlice(0, 4);
+        assertEquals(2, slice.refCnt());
+
+        i = 0;
+        while (slice.isReadable()) {
+            assertEquals(i++, slice.readByte());
+        }
+        slice.release();
+        buf.release();
+        assertEquals(0, slice.refCnt());
+        assertEquals(0, buf.refCnt());
+        assertEquals(0, buffer.refCnt());
+    }
 }

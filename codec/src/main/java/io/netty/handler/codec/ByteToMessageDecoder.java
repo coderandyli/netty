@@ -23,6 +23,7 @@ import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
+import io.netty.util.IllegalReferenceCountException;
 import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.StringUtil;
 
@@ -88,6 +89,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     public static final Cumulator MERGE_CUMULATOR = new Cumulator() {
         @Override
         public ByteBuf cumulate(ByteBufAllocator alloc, ByteBuf cumulation, ByteBuf in) {
+            if (cumulation == in) {
+                // when the in buffer is the same as the cumulation it is doubly retained, release it once
+                in.release();
+                return cumulation;
+            }
             if (!cumulation.isReadable() && in.isContiguous()) {
                 // If cumulation is empty and input buffer is contiguous, use it directly
                 cumulation.release();
@@ -96,8 +102,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             try {
                 final int required = in.readableBytes();
                 if (required > cumulation.maxWritableBytes() ||
-                        (required > cumulation.maxFastWritableBytes() && cumulation.refCnt() > 1) ||
-                        cumulation.isReadOnly()) {
+                    required > cumulation.maxFastWritableBytes() && cumulation.refCnt() > 1 ||
+                    cumulation.isReadOnly()) {
                     // Expand cumulation (by replacing it) under the following conditions:
                     // - cumulation cannot be resized to accommodate the additional data
                     // - cumulation can be expanded with a reallocation operation to accommodate but the buffer is
@@ -109,7 +115,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 in.readerIndex(in.writerIndex());
                 return cumulation;
             } finally {
-                // We must release in in all cases as otherwise it may produce a leak if writeBytes(...) throw
+                // We must release in all cases as otherwise it may produce a leak if writeBytes(...) throw
                 // for whatever release (for example because of OutOfMemoryError)
                 in.release();
             }
@@ -119,7 +125,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     /**
      * Cumulate {@link ByteBuf}s by add them to a {@link CompositeByteBuf} and so do no memory copy whenever possible.
      * Be aware that {@link CompositeByteBuf} use a more complex indexing implementation so depending on your use-case
-     * and the decoder implementation this may be slower then just use the {@link #MERGE_CUMULATOR}.
+     * and the decoder implementation this may be slower than just use the {@link #MERGE_CUMULATOR}.
      *
      * 数据积累器的实现2
      *  - 基于内存组合的方式实现，避免内存复制
@@ -128,6 +134,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     public static final Cumulator COMPOSITE_CUMULATOR = new Cumulator() {
         @Override
         public ByteBuf cumulate(ByteBufAllocator alloc, ByteBuf cumulation, ByteBuf in) {
+            if (cumulation == in) {
+                // when the in buffer is the same as the cumulation it is doubly retained, release it once
+                in.release();
+                return cumulation;
+            }
             if (!cumulation.isReadable()) {
                 cumulation.release();
                 return in;
@@ -181,6 +192,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      * when {@link ChannelConfig#isAutoRead()} is {@code false}.
      */
     private boolean firedChannelRead;
+
+    private boolean selfFiredChannelRead;
 
     /**
      * A bitmask where the bits are defined as
@@ -265,7 +278,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
         }
         ByteBuf buf = cumulation;
         if (buf != null) {
-            // Directly set this to null so we are sure we not access it in any other method here anymore.
+            // Directly set this to null, so we are sure we not access it in any other method here anymore.
             cumulation = null;
             numReads = 0;
             int readable = buf.readableBytes();
@@ -291,6 +304,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof ByteBuf) {
+            selfFiredChannelRead = true;
             CodecOutputList out = CodecOutputList.newInstance();
             try {
                 // 第一笔数据直接赋值给数据积累器cumulation，
@@ -307,10 +321,18 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 try {
                     if (cumulation != null && !cumulation.isReadable()) {
                         numReads = 0;
-                        cumulation.release();
+                        try {
+                            cumulation.release();
+                        } catch (IllegalReferenceCountException e) {
+                            //noinspection ThrowFromFinallyBlock
+                            throw new IllegalReferenceCountException(
+                                    getClass().getSimpleName() + "#decode() might have released its input buffer, " +
+                                            "or passed it down the pipeline without a retain() call, " +
+                                            "which is not allowed.", e);
+                        }
                         cumulation = null;
                     } else if (++numReads >= discardAfterReads) {
-                        // We did enough reads already try to discard some bytes so we not risk to see a OOME.
+                        // We did enough reads already try to discard some bytes, so we not risk to see a OOME.
                         // See https://github.com/netty/netty/issues/4275
                         numReads = 0;
                         discardSomeReadBytes();
@@ -354,7 +376,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
         numReads = 0;
         discardSomeReadBytes();
-        if (!firedChannelRead && !ctx.channel().config().isAutoRead()) {
+        if (selfFiredChannelRead && !firedChannelRead && !ctx.channel().config().isAutoRead()) {
             ctx.read();
         }
         firedChannelRead = false;
@@ -451,7 +473,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
         try {
             while (in.isReadable()) {
-                int outSize = out.size();
+                final int outSize = out.size();
 
                 if (outSize > 0) {
                     fireChannelRead(ctx, out, outSize);
@@ -465,7 +487,6 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     if (ctx.isRemoved()) {
                         break;
                     }
-                    outSize = 0;
                 }
 
                 int oldInputLength = in.readableBytes();
@@ -481,7 +502,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     break;
                 }
 
-                if (outSize == out.size()) {
+                if (out.isEmpty()) {
                     if (oldInputLength == in.readableBytes()) {
                         break;
                     } else {
@@ -549,7 +570,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      * Is called one last time when the {@link ChannelHandlerContext} goes in-active. Which means the
      * {@link #channelInactive(ChannelHandlerContext)} was triggered.
      *
-     * By default this will just call {@link #decode(ChannelHandlerContext, ByteBuf, List)} but sub-classes may
+     * By default, this will just call {@link #decode(ChannelHandlerContext, ByteBuf, List)} but sub-classes may
      * override this for some special cleanup operation.
      */
     protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {

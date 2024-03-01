@@ -28,6 +28,7 @@ import java.security.Principal;
 import java.security.cert.Certificate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Delegates all operations to a wrapped {@link OpenSslSession} except the methods defined by {@link ExtendedSSLSession}
@@ -42,6 +43,7 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     private static final String[] LOCAL_SUPPORTED_SIGNATURE_ALGORITHMS = {
             "SHA512withRSA", "SHA512withECDSA", "SHA384withRSA", "SHA384withECDSA", "SHA256withRSA",
             "SHA256withECDSA", "SHA224withRSA", "SHA224withECDSA", "SHA1withRSA", "SHA1withECDSA",
+            "RSASSA-PSS",
     };
 
     private final OpenSslSession wrapped;
@@ -63,13 +65,24 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     }
 
     @Override
+    public void prepareHandshake() {
+        wrapped.prepareHandshake();
+    }
+
+    @Override
+    public Map<String, Object> keyValueStorage() {
+        return wrapped.keyValueStorage();
+    }
+
+    @Override
     public OpenSslSessionId sessionId() {
         return wrapped.sessionId();
     }
 
     @Override
-    public void setSessionId(OpenSslSessionId id) {
-        wrapped.setSessionId(id);
+    public void setSessionDetails(long creationTime, long lastAccessedTime, OpenSslSessionId id,
+                                  Map<String, Object> keyValueStorage) {
+        wrapped.setSessionDetails(creationTime, lastAccessedTime, id, keyValueStorage);
     }
 
     @Override
@@ -110,6 +123,11 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     @Override
     public final long getLastAccessedTime() {
         return wrapped.getLastAccessedTime();
+    }
+
+    @Override
+    public void setLastAccessedTime(long time) {
+        wrapped.setLastAccessedTime(time);
     }
 
     @Override
@@ -229,6 +247,16 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     public void handshakeFinished(byte[] id, String cipher, String protocol, byte[] peerCertificate,
                                   byte[][] peerCertificateChain, long creationTime, long timeout) throws SSLException {
         wrapped.handshakeFinished(id, cipher, protocol, peerCertificate, peerCertificateChain, creationTime, timeout);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return wrapped.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return wrapped.hashCode();
     }
 
     @Override

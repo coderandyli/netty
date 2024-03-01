@@ -16,6 +16,7 @@
 package io.netty.handler.codec.http;
 
 import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
+import static io.netty.util.internal.ObjectUtil.checkNonEmptyAfterTrim;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.CharsetUtil;
@@ -34,8 +35,8 @@ public class HttpVersion implements Comparable<HttpVersion> {
     private static final Pattern VERSION_PATTERN =
         Pattern.compile("(\\S+)/(\\d+)\\.(\\d+)");
 
-    private static final String HTTP_1_0_STRING = "HTTP/1.0";
-    private static final String HTTP_1_1_STRING = "HTTP/1.1";
+    static final String HTTP_1_0_STRING = "HTTP/1.0";
+    static final String HTTP_1_1_STRING = "HTTP/1.1";
 
     /**
      * HTTP/1.0
@@ -57,6 +58,13 @@ public class HttpVersion implements Comparable<HttpVersion> {
      */
     public static HttpVersion valueOf(String text) {
         ObjectUtil.checkNotNull(text, "text");
+
+        // super fast-path
+        if (text == HTTP_1_1_STRING) {
+            return HTTP_1_1;
+        } else if (text == HTTP_1_0_STRING) {
+            return HTTP_1_0;
+        }
 
         text = text.trim();
 
@@ -108,12 +116,7 @@ public class HttpVersion implements Comparable<HttpVersion> {
      *        the {@code "Connection"} header is set to {@code "close"} explicitly.
      */
     public HttpVersion(String text, boolean keepAliveDefault) {
-        ObjectUtil.checkNotNull(text, "text");
-
-        text = text.trim().toUpperCase();
-        if (text.isEmpty()) {
-            throw new IllegalArgumentException("empty text");
-        }
+        text = checkNonEmptyAfterTrim(text, "text").toUpperCase();
 
         Matcher m = VERSION_PATTERN.matcher(text);
         if (!m.matches()) {
@@ -148,12 +151,7 @@ public class HttpVersion implements Comparable<HttpVersion> {
     private HttpVersion(
             String protocolName, int majorVersion, int minorVersion,
             boolean keepAliveDefault, boolean bytes) {
-        ObjectUtil.checkNotNull(protocolName, "protocolName");
-
-        protocolName = protocolName.trim().toUpperCase();
-        if (protocolName.isEmpty()) {
-            throw new IllegalArgumentException("empty protocolName");
-        }
+        protocolName = checkNonEmptyAfterTrim(protocolName, "protocolName").toUpperCase();
 
         for (int i = 0; i < protocolName.length(); i ++) {
             if (Character.isISOControl(protocolName.charAt(i)) ||

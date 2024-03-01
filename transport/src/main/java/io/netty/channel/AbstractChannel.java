@@ -655,38 +655,20 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             final Throwable shutdownCause = cause == null ?
                     new ChannelOutputShutdownException("Channel output shutdown") :
                     new ChannelOutputShutdownException("Channel output shutdown", cause);
-            Executor closeExecutor = prepareToClose();
-            if (closeExecutor != null) {
-                closeExecutor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            // Execute the shutdown.
-                            doShutdownOutput();
-                            promise.setSuccess();
-                        } catch (Throwable err) {
-                            promise.setFailure(err);
-                        } finally {
-                            // Dispatch to the EventLoop
-                            eventLoop().execute(new Runnable() {
-                                @Override
-                                public void run() {
-                                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
-                                }
-                            });
-                        }
-                    }
-                });
-            } else {
-                try {
-                    // Execute the shutdown.
-                    doShutdownOutput();
-                    promise.setSuccess();
-                } catch (Throwable err) {
-                    promise.setFailure(err);
-                } finally {
-                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
-                }
+
+            // When a side enables SO_LINGER and calls showdownOutput(...) to start TCP half-closure
+            // we can not call doDeregister here because we should ensure this side in fin_wait2 state
+            // can still receive and process the data which is send by another side in the close_wait state。
+            // See https://github.com/netty/netty/issues/11981
+            try {
+                // The shutdown function does not block regardless of the SO_LINGER setting on the socket
+                // so we don't need to use GlobalEventExecutor to execute the shutdown
+                doShutdownOutput();
+                promise.setSuccess();
+            } catch (Throwable err) {
+                promise.setFailure(err);
+            } finally {
+                closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
             }
         }
 
@@ -852,10 +834,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         @Override
         public final void beginRead() {
             assertEventLoop();
-
-            if (!isActive()) {
-                return;
-            }
 
             try {
                 doBeginRead();
@@ -1203,7 +1181,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
         // Suppress a warning since this method doesn't need synchronization
         @Override
-        public Throwable fillInStackTrace() {   // lgtm[java/non-sync-override]
+        public Throwable fillInStackTrace() {
             return this;
         }
     }
@@ -1219,7 +1197,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
         // Suppress a warning since this method doesn't need synchronization
         @Override
-        public Throwable fillInStackTrace() {   // lgtm[java/non-sync-override]
+        public Throwable fillInStackTrace() {
             return this;
         }
     }
@@ -1235,7 +1213,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
         // Suppress a warning since this method doesn't need synchronization
         @Override
-        public Throwable fillInStackTrace() {   // lgtm[java/non-sync-override]
+        public Throwable fillInStackTrace() {
             return this;
         }
     }

@@ -17,6 +17,8 @@ package io.netty.util.internal;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -42,6 +44,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.ImmediateExecutor;
@@ -49,8 +52,10 @@ import io.netty.util.concurrent.ScheduledFuture;
 import io.netty.util.concurrent.SingleThreadEventExecutor;
 import io.netty.util.internal.Hidden.NettyBlockHoundIntegration;
 import org.hamcrest.Matchers;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.DisabledIf;
 import reactor.blockhound.BlockHound;
 import reactor.blockhound.BlockingOperationError;
 import reactor.blockhound.integration.BlockHoundIntegration;
@@ -70,20 +75,26 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static io.netty.buffer.Unpooled.wrappedBuffer;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@DisabledIf("isDisabledIfJavaVersion18OrAbove")
 public class NettyBlockHoundIntegrationTest {
 
-    @BeforeClass
+    private static boolean isDisabledIfJavaVersion18OrAbove() {
+        return PlatformDependent.javaVersion() >= 18;
+    }
+
+    @BeforeAll
     public static void setUpClass() {
         BlockHound.install();
     }
@@ -115,12 +126,14 @@ public class NettyBlockHoundIntegrationTest {
         }
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testGlobalEventExecutorTakeTask() throws InterruptedException {
         testEventExecutorTakeTask(GlobalEventExecutor.INSTANCE);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSingleThreadEventExecutorTakeTask() throws InterruptedException {
         SingleThreadEventExecutor executor =
                 new SingleThreadEventExecutor(null, new DefaultThreadFactory("test"), true) {
@@ -144,7 +157,8 @@ public class NettyBlockHoundIntegrationTest {
         latch.await();
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSingleThreadEventExecutorAddTask() throws Exception {
         TestLinkedBlockingQueue<Runnable> taskQueue = new TestLinkedBlockingQueue<>();
         SingleThreadEventExecutor executor =
@@ -175,7 +189,25 @@ public class NettyBlockHoundIntegrationTest {
         latch.await();
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    void permittingBlockingCallsInFastThreadLocalThreadSubclass() throws Exception {
+        final FutureTask<Void> future = new FutureTask<>(() -> {
+            Thread.sleep(0);
+            return null;
+        });
+        FastThreadLocalThread thread = new FastThreadLocalThread(future) {
+            @Override
+            public boolean permitBlockingCalls() {
+                return true; // The Thread.sleep(0) call should not be flagged because we allow blocking calls.
+            }
+        };
+        thread.start();
+        future.get(5, TimeUnit.SECONDS);
+        thread.join();
+    }
+
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testHashedWheelTimerStartStop() throws Exception {
         HashedWheelTimer timer = new HashedWheelTimer();
         Future<?> futureStart = GlobalEventExecutor.INSTANCE.submit(timer::start);
@@ -240,14 +272,25 @@ public class NettyBlockHoundIntegrationTest {
     }
 
     @Test
-    public void testTrustManagerVerify() throws Exception {
-        testTrustManagerVerify("TLSv1.2");
+    public void testTrustManagerVerifyJDK() throws Exception {
+        testTrustManagerVerify(SslProvider.JDK, "TLSv1.2");
     }
 
     @Test
-    public void testTrustManagerVerifyTLSv13() throws Exception {
+    public void testTrustManagerVerifyTLSv13JDK() throws Exception {
         assumeTrue(SslProvider.isTlsv13Supported(SslProvider.JDK));
-        testTrustManagerVerify("TLSv1.3");
+        testTrustManagerVerify(SslProvider.JDK, "TLSv1.3");
+    }
+
+    @Test
+    public void testTrustManagerVerifyOpenSSL() throws Exception {
+        testTrustManagerVerify(SslProvider.OPENSSL, "TLSv1.2");
+    }
+
+    @Test
+    public void testTrustManagerVerifyTLSv13OpenSSL() throws Exception {
+        assumeTrue(SslProvider.isTlsv13Supported(SslProvider.OPENSSL));
+        testTrustManagerVerify(SslProvider.OPENSSL, "TLSv1.3");
     }
 
     @Test
@@ -321,17 +364,50 @@ public class NettyBlockHoundIntegrationTest {
         }
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
+    public void pooledBufferAllocation() throws Exception {
+        AtomicLong iterationCounter = new AtomicLong();
+        PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+        FutureTask<Void> task = new FutureTask<>(() -> {
+            List<ByteBuf> buffers = new ArrayList<>();
+            long count;
+            do {
+                count = iterationCounter.get();
+            } while (count == 0);
+            for (int i = 0; i < 13; i++) {
+                int size = 8 << i;
+                buffers.add(allocator.ioBuffer(size, size));
+            }
+            for (ByteBuf buffer : buffers) {
+                buffer.release();
+            }
+            return null;
+        });
+        FastThreadLocalThread thread = new FastThreadLocalThread(task);
+        thread.start();
+        do {
+            allocator.dumpStats(); // This will take internal pool locks and we'll race with the thread.
+            iterationCounter.set(1);
+        } while (thread.isAlive());
+        thread.join();
+        task.get();
+    }
+
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testUnixResolverDnsServerAddressStreamProvider_Parse() throws InterruptedException {
         doTestParseResolverFilesAllowsBlockingCalls(DnsServerAddressStreamProviders::unixDefault);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testHostsFileParser_Parse() throws InterruptedException {
         doTestParseResolverFilesAllowsBlockingCalls(DnsNameResolverBuilder::new);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testUnixResolverDnsServerAddressStreamProvider_ParseEtcResolverSearchDomainsAndOptions()
             throws InterruptedException {
         NioEventLoopGroup group = new NioEventLoopGroup();
@@ -378,9 +454,10 @@ public class NettyBlockHoundIntegrationTest {
         }
     }
 
-    private static void testTrustManagerVerify(String tlsVersion) throws Exception {
+    private static void testTrustManagerVerify(SslProvider provider, String tlsVersion) throws Exception {
         final SslContext sslClientCtx =
                 SslContextBuilder.forClient()
+                                 .sslProvider(provider)
                                  .protocols(tlsVersion)
                                  .trustManager(ResourcesUtil.getFile(
                                          NettyBlockHoundIntegrationTest.class, "mutual_auth_ca.pem"))
@@ -392,6 +469,7 @@ public class NettyBlockHoundIntegrationTest {
                                             ResourcesUtil.getFile(
                                                     NettyBlockHoundIntegrationTest.class, "localhost_server.key"),
                                             null)
+                                 .sslProvider(provider)
                                  .protocols(tlsVersion)
                                  .build();
 

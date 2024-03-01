@@ -17,7 +17,7 @@ package io.netty.handler.codec.http.cookie;
 
 import io.netty.handler.codec.DateFormatter;
 import io.netty.handler.codec.http.cookie.CookieHeaderNames.SameSite;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -29,28 +29,35 @@ import java.util.TimeZone;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ClientCookieDecoderTest {
     @Test
     public void testDecodingSingleCookieV0() {
         String cookieString = "myCookie=myValue;expires="
                 + DateFormatter.format(new Date(System.currentTimeMillis() + 50000))
-                + ";path=/apathsomewhere;domain=.adomainsomewhere;secure;SameSite=None";
+                + ";path=/apathsomewhere;domain=.adomainsomewhere;secure;SameSite=None;Partitioned";
 
         Cookie cookie = ClientCookieDecoder.STRICT.decode(cookieString);
         assertNotNull(cookie);
         assertEquals("myValue", cookie.value());
         assertEquals(".adomainsomewhere", cookie.domain());
-        assertNotEquals("maxAge should be defined when parsing cookie " + cookieString,
-                Long.MIN_VALUE, cookie.maxAge());
-        assertTrue("maxAge should be about 50ms when parsing cookie " + cookieString,
-                cookie.maxAge() >= 40 && cookie.maxAge() <= 60);
+        assertNotEquals(Long.MIN_VALUE, cookie.maxAge(),
+                "maxAge should be defined when parsing cookie " + cookieString);
+        assertTrue(cookie.maxAge() >= 40 && cookie.maxAge() <= 60,
+                "maxAge should be about 50ms when parsing cookie " + cookieString);
         assertEquals("/apathsomewhere", cookie.path());
         assertTrue(cookie.isSecure());
 
         assertThat(cookie, is(instanceOf(DefaultCookie.class)));
-        assertEquals(SameSite.None, ((DefaultCookie) cookie).sameSite());
+        DefaultCookie c = (DefaultCookie) cookie;
+        assertEquals(SameSite.None, c.sameSite());
+        assertTrue(c.isPartitioned());
     }
 
     @Test

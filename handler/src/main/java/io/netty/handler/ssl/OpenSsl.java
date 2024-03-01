@@ -29,6 +29,7 @@ import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.NativeLibraryLoader;
 import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.SystemPropertyUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
@@ -37,7 +38,10 @@ import java.io.ByteArrayInputStream;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -52,7 +56,6 @@ public final class OpenSsl {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(OpenSsl.class);
     private static final Throwable UNAVAILABILITY_CAUSE;
-
     static final List<String> DEFAULT_CIPHERS;
     static final Set<String> AVAILABLE_CIPHER_SUITES;
     private static final Set<String> AVAILABLE_OPENSSL_CIPHER_SUITES;
@@ -62,50 +65,19 @@ public final class OpenSsl {
     private static final boolean SUPPORTS_OCSP;
     private static final boolean TLSV13_SUPPORTED;
     private static final boolean IS_BORINGSSL;
+    private static final Set<String> CLIENT_DEFAULT_PROTOCOLS;
+    private static final Set<String> SERVER_DEFAULT_PROTOCOLS;
     static final Set<String> SUPPORTED_PROTOCOLS_SET;
     static final String[] EXTRA_SUPPORTED_TLS_1_3_CIPHERS;
+    static final String EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING;
+    static final String[] NAMED_GROUPS;
 
-    // self-signed certificate for netty.io and the matching private-key
-    private static final String CERT = "-----BEGIN CERTIFICATE-----\n" +
-            "MIICrjCCAZagAwIBAgIIdSvQPv1QAZQwDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAxMLZXhhbXBs\n" +
-            "ZS5jb20wIBcNMTgwNDA2MjIwNjU5WhgPOTk5OTEyMzEyMzU5NTlaMBYxFDASBgNVBAMTC2V4YW1w\n" +
-            "bGUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAggbWsmDQ6zNzRZ5AW8E3eoGl\n" +
-            "qWvOBDb5Fs1oBRrVQHuYmVAoaqwDzXYJ0LOwa293AgWEQ1jpcbZ2hpoYQzqEZBTLnFhMrhRFlH6K\n" +
-            "bJND8Y33kZ/iSVBBDuGbdSbJShlM+4WwQ9IAso4MZ4vW3S1iv5fGGpLgbtXRmBf/RU8omN0Gijlv\n" +
-            "WlLWHWijLN8xQtySFuBQ7ssW8RcKAary3pUm6UUQB+Co6lnfti0Tzag8PgjhAJq2Z3wbsGRnP2YS\n" +
-            "vYoaK6qzmHXRYlp/PxrjBAZAmkLJs4YTm/XFF+fkeYx4i9zqHbyone5yerRibsHaXZWLnUL+rFoe\n" +
-            "MdKvr0VS3sGmhQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQADQi441pKmXf9FvUV5EHU4v8nJT9Iq\n" +
-            "yqwsKwXnr7AsUlDGHBD7jGrjAXnG5rGxuNKBQ35wRxJATKrUtyaquFUL6H8O6aGQehiFTk6zmPbe\n" +
-            "12Gu44vqqTgIUxnv3JQJiox8S2hMxsSddpeCmSdvmalvD6WG4NthH6B9ZaBEiep1+0s0RUaBYn73\n" +
-            "I7CCUaAtbjfR6pcJjrFk5ei7uwdQZFSJtkP2z8r7zfeANJddAKFlkaMWn7u+OIVuB4XPooWicObk\n" +
-            "NAHFtP65bocUYnDpTVdiyvn8DdqyZ/EO8n1bBKBzuSLplk2msW4pdgaFgY7Vw/0wzcFXfUXmL1uy\n" +
-            "G8sQD/wx\n" +
-            "-----END CERTIFICATE-----";
+    static final boolean JAVAX_CERTIFICATE_CREATION_SUPPORTED;
 
-    private static final String KEY = "-----BEGIN PRIVATE KEY-----\n" +
-            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCCBtayYNDrM3NFnkBbwTd6gaWp\n" +
-            "a84ENvkWzWgFGtVAe5iZUChqrAPNdgnQs7Brb3cCBYRDWOlxtnaGmhhDOoRkFMucWEyuFEWUfops\n" +
-            "k0PxjfeRn+JJUEEO4Zt1JslKGUz7hbBD0gCyjgxni9bdLWK/l8YakuBu1dGYF/9FTyiY3QaKOW9a\n" +
-            "UtYdaKMs3zFC3JIW4FDuyxbxFwoBqvLelSbpRRAH4KjqWd+2LRPNqDw+COEAmrZnfBuwZGc/ZhK9\n" +
-            "ihorqrOYddFiWn8/GuMEBkCaQsmzhhOb9cUX5+R5jHiL3OodvKid7nJ6tGJuwdpdlYudQv6sWh4x\n" +
-            "0q+vRVLewaaFAgMBAAECggEAP8tPJvFtTxhNJAkCloHz0D0vpDHqQBMgntlkgayqmBqLwhyb18pR\n" +
-            "i0qwgh7HHc7wWqOOQuSqlEnrWRrdcI6TSe8R/sErzfTQNoznKWIPYcI/hskk4sdnQ//Yn9/Jvnsv\n" +
-            "U/BBjOTJxtD+sQbhAl80JcA3R+5sArURQkfzzHOL/YMqzAsn5hTzp7HZCxUqBk3KaHRxV7NefeOE\n" +
-            "xlZuWSmxYWfbFIs4kx19/1t7h8CHQWezw+G60G2VBtSBBxDnhBWvqG6R/wpzJ3nEhPLLY9T+XIHe\n" +
-            "ipzdMOOOUZorfIg7M+pyYPji+ZIZxIpY5OjrOzXHciAjRtr5Y7l99K1CG1LguQKBgQDrQfIMxxtZ\n" +
-            "vxU/1cRmUV9l7pt5bjV5R6byXq178LxPKVYNjdZ840Q0/OpZEVqaT1xKVi35ohP1QfNjxPLlHD+K\n" +
-            "iDAR9z6zkwjIrbwPCnb5kuXy4lpwPcmmmkva25fI7qlpHtbcuQdoBdCfr/KkKaUCMPyY89LCXgEw\n" +
-            "5KTDj64UywKBgQCNfbO+eZLGzhiHhtNJurresCsIGWlInv322gL8CSfBMYl6eNfUTZvUDdFhPISL\n" +
-            "UljKWzXDrjw0ujFSPR0XhUGtiq89H+HUTuPPYv25gVXO+HTgBFZEPl4PpA+BUsSVZy0NddneyqLk\n" +
-            "42Wey9omY9Q8WsdNQS5cbUvy0uG6WFoX7wKBgQDZ1jpW8pa0x2bZsQsm4vo+3G5CRnZlUp+XlWt2\n" +
-            "dDcp5dC0xD1zbs1dc0NcLeGDOTDv9FSl7hok42iHXXq8AygjEm/QcuwwQ1nC2HxmQP5holAiUs4D\n" +
-            "WHM8PWs3wFYPzE459EBoKTxeaeP/uWAn+he8q7d5uWvSZlEcANs/6e77eQKBgD21Ar0hfFfj7mK8\n" +
-            "9E0FeRZBsqK3omkfnhcYgZC11Xa2SgT1yvs2Va2n0RcdM5kncr3eBZav2GYOhhAdwyBM55XuE/sO\n" +
-            "eokDVutNeuZ6d5fqV96TRaRBpvgfTvvRwxZ9hvKF4Vz+9wfn/JvCwANaKmegF6ejs7pvmF3whq2k\n" +
-            "drZVAoGAX5YxQ5XMTD0QbMAl7/6qp6S58xNoVdfCkmkj1ZLKaHKIjS/benkKGlySVQVPexPfnkZx\n" +
-            "p/Vv9yyphBoudiTBS9Uog66ueLYZqpgxlM/6OhYg86Gm3U2ycvMxYjBM1NFiyze21AqAhI+HX+Ot\n" +
-            "mraV2/guSgDgZAhukRZzeQ2RucI=\n" +
-            "-----END PRIVATE KEY-----";
+    // Use default that is supported in java 11 and earlier and also in OpenSSL / BoringSSL.
+    // See https://github.com/netty/netty-tcnative/issues/567
+    // See https://www.java.com/en/configure_crypto.html for ordering
+    private static final String[] DEFAULT_NAMED_GROUPS = { "x25519", "secp256r1", "secp384r1", "secp521r1" };
 
     static {
         Throwable cause = null;
@@ -169,6 +141,8 @@ public final class OpenSsl {
         }
 
         UNAVAILABILITY_CAUSE = cause;
+        CLIENT_DEFAULT_PROTOCOLS = defaultProtocols("jdk.tls.client.protocols");
+        SERVER_DEFAULT_PROTOCOLS = defaultProtocols("jdk.tls.server.protocols");
 
         if (cause == null) {
             logger.debug("netty-tcnative using native library: {}", SSL.versionString());
@@ -178,14 +152,27 @@ public final class OpenSsl {
             boolean supportsKeyManagerFactory = false;
             boolean useKeyManagerFactory = false;
             boolean tlsv13Supported = false;
+            String[] namedGroups = DEFAULT_NAMED_GROUPS;
+            String[] defaultConvertedNamedGroups = new String[namedGroups.length];
+            for (int i = 0; i < namedGroups.length; i++) {
+                defaultConvertedNamedGroups[i] = GroupsConverter.toOpenSsl(namedGroups[i]);
+            }
 
             IS_BORINGSSL = "BoringSSL".equals(versionString());
             if (IS_BORINGSSL) {
                 EXTRA_SUPPORTED_TLS_1_3_CIPHERS = new String [] { "TLS_AES_128_GCM_SHA256",
                         "TLS_AES_256_GCM_SHA384" ,
                         "TLS_CHACHA20_POLY1305_SHA256" };
+
+                StringBuilder ciphersBuilder = new StringBuilder(128);
+                for (String cipher: EXTRA_SUPPORTED_TLS_1_3_CIPHERS) {
+                    ciphersBuilder.append(cipher).append(":");
+                }
+                ciphersBuilder.setLength(ciphersBuilder.length() - 1);
+                EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING = ciphersBuilder.toString();
             }  else {
                 EXTRA_SUPPORTED_TLS_1_3_CIPHERS = EmptyArrays.EMPTY_STRINGS;
+                EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING = StringUtil.EMPTY_STRING;
             }
 
             try {
@@ -195,25 +182,29 @@ public final class OpenSsl {
                 long cert = 0;
                 long key = 0;
                 try {
-                    try {
-                        StringBuilder tlsv13Ciphers = new StringBuilder();
+                    // As we delegate to the KeyManager / TrustManager of the JDK we need to ensure it can actually
+                    // handle TLSv13 as otherwise we may see runtime exceptions
+                    if (SslProvider.isTlsv13Supported(SslProvider.JDK)) {
+                        try {
+                            StringBuilder tlsv13Ciphers = new StringBuilder();
 
-                        for (String cipher: TLSV13_CIPHERS) {
-                            String converted = CipherSuiteConverter.toOpenSsl(cipher, IS_BORINGSSL);
-                            if (converted != null) {
-                                tlsv13Ciphers.append(converted).append(':');
+                            for (String cipher : TLSV13_CIPHERS) {
+                                String converted = CipherSuiteConverter.toOpenSsl(cipher, IS_BORINGSSL);
+                                if (converted != null) {
+                                    tlsv13Ciphers.append(converted).append(':');
+                                }
                             }
-                        }
-                        if (tlsv13Ciphers.length() == 0) {
-                            tlsv13Supported = false;
-                        } else {
-                            tlsv13Ciphers.setLength(tlsv13Ciphers.length() - 1);
-                            SSLContext.setCipherSuite(sslCtx, tlsv13Ciphers.toString() , true);
-                            tlsv13Supported = true;
-                        }
+                            if (tlsv13Ciphers.length() == 0) {
+                                tlsv13Supported = false;
+                            } else {
+                                tlsv13Ciphers.setLength(tlsv13Ciphers.length() - 1);
+                                SSLContext.setCipherSuite(sslCtx, tlsv13Ciphers.toString(), true);
+                                tlsv13Supported = true;
+                            }
 
-                    } catch (Exception ignore) {
-                        tlsv13Supported = false;
+                        } catch (Exception ignore) {
+                            tlsv13Supported = false;
+                        }
                     }
 
                     SSLContext.setCipherSuite(sslCtx, "ALL", false);
@@ -239,7 +230,7 @@ public final class OpenSsl {
                                                "AEAD-CHACHA20-POLY1305-SHA256");
                         }
 
-                        PemEncoded privateKey = PemPrivateKey.valueOf(KEY.getBytes(CharsetUtil.US_ASCII));
+                        PemEncoded privateKey = PemPrivateKey.valueOf(PROBING_KEY.getBytes(CharsetUtil.US_ASCII));
                         try {
                             // Let's check if we can set a callback, which may not work if the used OpenSSL version
                             // is to old.
@@ -298,12 +289,51 @@ public final class OpenSsl {
                             SSL.freePrivateKey(key);
                         }
                     }
+
+                    String groups = SystemPropertyUtil.get("jdk.tls.namedGroups", null);
+                    if (groups != null) {
+                        String[] nGroups = groups.split(",");
+                        Set<String> supportedNamedGroups = new LinkedHashSet<String>(nGroups.length);
+                        Set<String> supportedConvertedNamedGroups = new LinkedHashSet<String>(nGroups.length);
+
+                        Set<String> unsupportedNamedGroups = new LinkedHashSet<String>();
+                        for (String namedGroup : nGroups) {
+                            String converted = GroupsConverter.toOpenSsl(namedGroup);
+                            if (SSLContext.setCurvesList(sslCtx, converted)) {
+                                supportedConvertedNamedGroups.add(converted);
+                                supportedNamedGroups.add(namedGroup);
+                            } else {
+                                unsupportedNamedGroups.add(namedGroup);
+                            }
+                        }
+
+                        if (supportedNamedGroups.isEmpty()) {
+                            namedGroups = defaultConvertedNamedGroups;
+                            logger.info("All configured namedGroups are not supported: {}. Use default: {}.",
+                                    Arrays.toString(unsupportedNamedGroups.toArray(EmptyArrays.EMPTY_STRINGS)),
+                                    Arrays.toString(DEFAULT_NAMED_GROUPS));
+                        } else {
+                            String[] groupArray = supportedNamedGroups.toArray(EmptyArrays.EMPTY_STRINGS);
+                            if (unsupportedNamedGroups.isEmpty()) {
+                                logger.info("Using configured namedGroups -D 'jdk.tls.namedGroup': {} ",
+                                        Arrays.toString(groupArray));
+                            } else {
+                                logger.info("Using supported configured namedGroups: {}. Unsupported namedGroups: {}. ",
+                                        Arrays.toString(groupArray),
+                                        Arrays.toString(unsupportedNamedGroups.toArray(EmptyArrays.EMPTY_STRINGS)));
+                            }
+                            namedGroups =  supportedConvertedNamedGroups.toArray(EmptyArrays.EMPTY_STRINGS);
+                        }
+                    } else {
+                        namedGroups = defaultConvertedNamedGroups;
+                    }
                 } finally {
                     SSLContext.free(sslCtx);
                 }
             } catch (Exception e) {
                 logger.warn("Failed to get the list of available OpenSSL cipher suites.", e);
             }
+            NAMED_GROUPS = namedGroups;
             AVAILABLE_OPENSSL_CIPHER_SUITES = Collections.unmodifiableSet(availableOpenSslCipherSuites);
             final Set<String> availableJavaCipherSuites = new LinkedHashSet<String>(
                     AVAILABLE_OPENSSL_CIPHER_SUITES.size() * 2);
@@ -320,6 +350,8 @@ public final class OpenSsl {
 
             addIfSupported(availableJavaCipherSuites, defaultCiphers, DEFAULT_CIPHER_SUITES);
             addIfSupported(availableJavaCipherSuites, defaultCiphers, TLSV13_CIPHER_SUITES);
+            // Also handle the extra supported ciphers as these will contain some more stuff on BoringSSL.
+            addIfSupported(availableJavaCipherSuites, defaultCiphers, EXTRA_SUPPORTED_TLS_1_3_CIPHERS);
 
             useFallbackCiphersIfDefaultIsEmpty(defaultCiphers, availableJavaCipherSuites);
             DEFAULT_CIPHERS = Collections.unmodifiableList(defaultCiphers);
@@ -337,26 +369,26 @@ public final class OpenSsl {
 
             Set<String> protocols = new LinkedHashSet<String>(6);
             // Seems like there is no way to explicitly disable SSLv2Hello in openssl so it is always enabled
-            protocols.add(PROTOCOL_SSL_V2_HELLO);
+            protocols.add(SslProtocols.SSL_v2_HELLO);
             if (doesSupportProtocol(SSL.SSL_PROTOCOL_SSLV2, SSL.SSL_OP_NO_SSLv2)) {
-                protocols.add(PROTOCOL_SSL_V2);
+                protocols.add(SslProtocols.SSL_v2);
             }
             if (doesSupportProtocol(SSL.SSL_PROTOCOL_SSLV3, SSL.SSL_OP_NO_SSLv3)) {
-                protocols.add(PROTOCOL_SSL_V3);
+                protocols.add(SslProtocols.SSL_v3);
             }
             if (doesSupportProtocol(SSL.SSL_PROTOCOL_TLSV1, SSL.SSL_OP_NO_TLSv1)) {
-                protocols.add(PROTOCOL_TLS_V1);
+                protocols.add(SslProtocols.TLS_v1);
             }
             if (doesSupportProtocol(SSL.SSL_PROTOCOL_TLSV1_1, SSL.SSL_OP_NO_TLSv1_1)) {
-                protocols.add(PROTOCOL_TLS_V1_1);
+                protocols.add(SslProtocols.TLS_v1_1);
             }
             if (doesSupportProtocol(SSL.SSL_PROTOCOL_TLSV1_2, SSL.SSL_OP_NO_TLSv1_2)) {
-                protocols.add(PROTOCOL_TLS_V1_2);
+                protocols.add(SslProtocols.TLS_v1_2);
             }
 
-            // This is only supported by java11 and later.
+            // This is only supported by java8u272 and later.
             if (tlsv13Supported && doesSupportProtocol(SSL.SSL_PROTOCOL_TLSV1_3, SSL.SSL_OP_NO_TLSv1_3)) {
-                protocols.add(PROTOCOL_TLS_V1_3);
+                protocols.add(SslProtocols.TLS_v1_3);
                 TLSV13_SUPPORTED = true;
             } else {
                 TLSV13_SUPPORTED = false;
@@ -369,6 +401,18 @@ public final class OpenSsl {
                 logger.debug("Supported protocols (OpenSSL): {} ", SUPPORTED_PROTOCOLS_SET);
                 logger.debug("Default cipher suites (OpenSSL): {}", DEFAULT_CIPHERS);
             }
+
+            // Check if we can create a javax.security.cert.X509Certificate from our cert. This might fail on
+            // JDK17 and above. In this case we will later throw an UnsupportedOperationException if someone
+            // tries to access these via SSLSession. See https://github.com/netty/netty/issues/13560.
+            boolean javaxCertificateCreationSupported;
+            try {
+                javax.security.cert.X509Certificate.getInstance(PROBING_CERT.getBytes(CharsetUtil.US_ASCII));
+                javaxCertificateCreationSupported = true;
+            } catch (javax.security.cert.CertificateException ex) {
+                javaxCertificateCreationSupported = false;
+            }
+            JAVAX_CERTIFICATE_CREATION_SUPPORTED = javaxCertificateCreationSupported;
         } else {
             DEFAULT_CIPHERS = Collections.emptyList();
             AVAILABLE_OPENSSL_CIPHER_SUITES = Collections.emptySet();
@@ -381,7 +425,53 @@ public final class OpenSsl {
             TLSV13_SUPPORTED = false;
             IS_BORINGSSL = false;
             EXTRA_SUPPORTED_TLS_1_3_CIPHERS = EmptyArrays.EMPTY_STRINGS;
+            EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING = StringUtil.EMPTY_STRING;
+            NAMED_GROUPS = DEFAULT_NAMED_GROUPS;
+            JAVAX_CERTIFICATE_CREATION_SUPPORTED = false;
         }
+    }
+
+    static String checkTls13Ciphers(InternalLogger logger, String ciphers) {
+        if (IS_BORINGSSL && !ciphers.isEmpty()) {
+            assert EXTRA_SUPPORTED_TLS_1_3_CIPHERS.length > 0;
+            Set<String> boringsslTlsv13Ciphers = new HashSet<String>(EXTRA_SUPPORTED_TLS_1_3_CIPHERS.length);
+            Collections.addAll(boringsslTlsv13Ciphers, EXTRA_SUPPORTED_TLS_1_3_CIPHERS);
+            boolean ciphersNotMatch = false;
+            for (String cipher: ciphers.split(":")) {
+                if (boringsslTlsv13Ciphers.isEmpty()) {
+                    ciphersNotMatch = true;
+                    break;
+                }
+                if (!boringsslTlsv13Ciphers.remove(cipher) &&
+                        !boringsslTlsv13Ciphers.remove(CipherSuiteConverter.toJava(cipher, "TLS"))) {
+                    ciphersNotMatch = true;
+                    break;
+                }
+            }
+
+            // Also check if there are ciphers left.
+            ciphersNotMatch |= !boringsslTlsv13Ciphers.isEmpty();
+
+            if (ciphersNotMatch) {
+                if (logger.isInfoEnabled()) {
+                    StringBuilder javaCiphers = new StringBuilder(128);
+                    for (String cipher : ciphers.split(":")) {
+                        javaCiphers.append(CipherSuiteConverter.toJava(cipher, "TLS")).append(":");
+                    }
+                    javaCiphers.setLength(javaCiphers.length() - 1);
+                    logger.info(
+                            "BoringSSL doesn't allow to enable or disable TLSv1.3 ciphers explicitly." +
+                                    " Provided TLSv1.3 ciphers: '{}', default TLSv1.3 ciphers that will be used: '{}'.",
+                            javaCiphers, EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING);
+                }
+                return EXTRA_SUPPORTED_TLS_1_3_CIPHERS_STRING;
+            }
+        }
+        return ciphers;
+    }
+
+    static boolean isSessionCacheSupported() {
+        return version() >= 0x10100000L;
     }
 
     /**
@@ -389,7 +479,7 @@ public final class OpenSsl {
      */
     static X509Certificate selfSignedCertificate() throws CertificateException {
         return (X509Certificate) SslContext.X509_CERT_FACTORY.generateCertificate(
-                new ByteArrayInputStream(CERT.getBytes(CharsetUtil.US_ASCII))
+                new ByteArrayInputStream(PROBING_CERT.getBytes(CharsetUtil.US_ASCII))
         );
     }
 
@@ -571,7 +661,7 @@ public final class OpenSsl {
 
         // First, try loading the platform-specific library. Platform-specific
         // libraries will be available if using a tcnative uber jar.
-        if ("linux".equalsIgnoreCase(os)) {
+        if ("linux".equals(os)) {
             Set<String> classifiers = PlatformDependent.normalizedLinuxClassifiers();
             for (String classifier : classifiers) {
                 libNames.add(staticLibName + "_" + os + '_' + arch + "_" + classifier);
@@ -590,7 +680,7 @@ public final class OpenSsl {
         libNames.add(staticLibName);
 
         NativeLibraryLoader.loadFirstAvailable(PlatformDependent.getClassLoader(SSLContext.class),
-            libNames.toArray(new String[0]));
+            libNames.toArray(EmptyArrays.EMPTY_STRINGS));
     }
 
     private static boolean initializeTcNative(String engine) throws Exception {
@@ -605,6 +695,50 @@ public final class OpenSsl {
 
     static boolean isTlsv13Supported() {
         return TLSV13_SUPPORTED;
+    }
+
+    static boolean isOptionSupported(SslContextOption<?> option) {
+        if (isAvailable()) {
+            if (option == OpenSslContextOption.USE_TASKS) {
+                return true;
+            }
+            // Check for options that are only supported by BoringSSL atm.
+            if (isBoringSSL()) {
+                return option == OpenSslContextOption.ASYNC_PRIVATE_KEY_METHOD ||
+                        option == OpenSslContextOption.PRIVATE_KEY_METHOD ||
+                        option == OpenSslContextOption.CERTIFICATE_COMPRESSION_ALGORITHMS ||
+                        option == OpenSslContextOption.TLS_FALSE_START ||
+                        option == OpenSslContextOption.MAX_CERTIFICATE_LIST_BYTES;
+            }
+        }
+        return false;
+    }
+
+    private static Set<String> defaultProtocols(String property) {
+        String protocolsString = SystemPropertyUtil.get(property, null);
+        Set<String> protocols = new HashSet<String>();
+        if (protocolsString != null) {
+            for (String proto : protocolsString.split(",")) {
+                String p = proto.trim();
+                protocols.add(p);
+            }
+        } else {
+            protocols.add(SslProtocols.TLS_v1_2);
+            protocols.add(SslProtocols.TLS_v1_3);
+        }
+        return protocols;
+    }
+
+    static String[] defaultProtocols(boolean isClient) {
+        final Collection<String> defaultProtocols = isClient ? CLIENT_DEFAULT_PROTOCOLS : SERVER_DEFAULT_PROTOCOLS;
+        assert defaultProtocols != null;
+        List<String> protocols = new ArrayList<String>(defaultProtocols.size());
+        for (String proto : defaultProtocols) {
+            if (SUPPORTED_PROTOCOLS_SET.contains(proto)) {
+                protocols.add(proto);
+            }
+        }
+        return protocols.toArray(EmptyArrays.EMPTY_STRINGS);
     }
 
     static boolean isBoringSSL() {

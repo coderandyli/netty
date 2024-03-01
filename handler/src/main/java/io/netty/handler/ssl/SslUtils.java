@@ -23,6 +23,7 @@ import io.netty.handler.codec.base64.Base64;
 import io.netty.handler.codec.base64.Base64Dialect;
 import io.netty.util.NetUtil;
 import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -30,8 +31,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.Provider;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -54,14 +55,16 @@ final class SslUtils {
             asList("TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256",
                           "TLS_AES_128_GCM_SHA256", "TLS_AES_128_CCM_8_SHA256",
                           "TLS_AES_128_CCM_SHA256")));
-    // Protocols
-    static final String PROTOCOL_SSL_V2_HELLO = "SSLv2Hello";
-    static final String PROTOCOL_SSL_V2 = "SSLv2";
-    static final String PROTOCOL_SSL_V3 = "SSLv3";
-    static final String PROTOCOL_TLS_V1 = "TLSv1";
-    static final String PROTOCOL_TLS_V1_1 = "TLSv1.1";
-    static final String PROTOCOL_TLS_V1_2 = "TLSv1.2";
-    static final String PROTOCOL_TLS_V1_3 = "TLSv1.3";
+
+    static final short DTLS_1_0 = (short) 0xFEFF;
+    static final short DTLS_1_2 = (short) 0xFEFD;
+    static final short DTLS_1_3 = (short) 0xFEFC;
+    static final short DTLS_RECORD_HEADER_LENGTH = 13;
+
+    /**
+     * GMSSL Protocol Version
+     */
+    static final int GMSSL_PROTOCOL_VERSION = 0x101;
 
     static final String INVALID_CIPHER = "SSL_NULL_WITH_NULL_NULL";
 
@@ -109,6 +112,47 @@ final class SslUtils {
     static final String[] DEFAULT_TLSV13_CIPHER_SUITES;
     static final String[] TLSV13_CIPHER_SUITES = { "TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384" };
 
+    // self-signed certificate for netty.io and the matching private-key
+    static final String PROBING_CERT = "-----BEGIN CERTIFICATE-----\n" +
+            "MIICrjCCAZagAwIBAgIIdSvQPv1QAZQwDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAxMLZXhhbXBs\n" +
+            "ZS5jb20wIBcNMTgwNDA2MjIwNjU5WhgPOTk5OTEyMzEyMzU5NTlaMBYxFDASBgNVBAMTC2V4YW1w\n" +
+            "bGUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAggbWsmDQ6zNzRZ5AW8E3eoGl\n" +
+            "qWvOBDb5Fs1oBRrVQHuYmVAoaqwDzXYJ0LOwa293AgWEQ1jpcbZ2hpoYQzqEZBTLnFhMrhRFlH6K\n" +
+            "bJND8Y33kZ/iSVBBDuGbdSbJShlM+4WwQ9IAso4MZ4vW3S1iv5fGGpLgbtXRmBf/RU8omN0Gijlv\n" +
+            "WlLWHWijLN8xQtySFuBQ7ssW8RcKAary3pUm6UUQB+Co6lnfti0Tzag8PgjhAJq2Z3wbsGRnP2YS\n" +
+            "vYoaK6qzmHXRYlp/PxrjBAZAmkLJs4YTm/XFF+fkeYx4i9zqHbyone5yerRibsHaXZWLnUL+rFoe\n" +
+            "MdKvr0VS3sGmhQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQADQi441pKmXf9FvUV5EHU4v8nJT9Iq\n" +
+            "yqwsKwXnr7AsUlDGHBD7jGrjAXnG5rGxuNKBQ35wRxJATKrUtyaquFUL6H8O6aGQehiFTk6zmPbe\n" +
+            "12Gu44vqqTgIUxnv3JQJiox8S2hMxsSddpeCmSdvmalvD6WG4NthH6B9ZaBEiep1+0s0RUaBYn73\n" +
+            "I7CCUaAtbjfR6pcJjrFk5ei7uwdQZFSJtkP2z8r7zfeANJddAKFlkaMWn7u+OIVuB4XPooWicObk\n" +
+            "NAHFtP65bocUYnDpTVdiyvn8DdqyZ/EO8n1bBKBzuSLplk2msW4pdgaFgY7Vw/0wzcFXfUXmL1uy\n" +
+            "G8sQD/wx\n" +
+            "-----END CERTIFICATE-----";
+    static final String PROBING_KEY = "-----BEGIN PRIVATE KEY-----\n" +
+            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCCBtayYNDrM3NFnkBbwTd6gaWp\n" +
+            "a84ENvkWzWgFGtVAe5iZUChqrAPNdgnQs7Brb3cCBYRDWOlxtnaGmhhDOoRkFMucWEyuFEWUfops\n" +
+            "k0PxjfeRn+JJUEEO4Zt1JslKGUz7hbBD0gCyjgxni9bdLWK/l8YakuBu1dGYF/9FTyiY3QaKOW9a\n" +
+            "UtYdaKMs3zFC3JIW4FDuyxbxFwoBqvLelSbpRRAH4KjqWd+2LRPNqDw+COEAmrZnfBuwZGc/ZhK9\n" +
+            "ihorqrOYddFiWn8/GuMEBkCaQsmzhhOb9cUX5+R5jHiL3OodvKid7nJ6tGJuwdpdlYudQv6sWh4x\n" +
+            "0q+vRVLewaaFAgMBAAECggEAP8tPJvFtTxhNJAkCloHz0D0vpDHqQBMgntlkgayqmBqLwhyb18pR\n" +
+            "i0qwgh7HHc7wWqOOQuSqlEnrWRrdcI6TSe8R/sErzfTQNoznKWIPYcI/hskk4sdnQ//Yn9/Jvnsv\n" +
+            "U/BBjOTJxtD+sQbhAl80JcA3R+5sArURQkfzzHOL/YMqzAsn5hTzp7HZCxUqBk3KaHRxV7NefeOE\n" +
+            "xlZuWSmxYWfbFIs4kx19/1t7h8CHQWezw+G60G2VBtSBBxDnhBWvqG6R/wpzJ3nEhPLLY9T+XIHe\n" +
+            "ipzdMOOOUZorfIg7M+pyYPji+ZIZxIpY5OjrOzXHciAjRtr5Y7l99K1CG1LguQKBgQDrQfIMxxtZ\n" +
+            "vxU/1cRmUV9l7pt5bjV5R6byXq178LxPKVYNjdZ840Q0/OpZEVqaT1xKVi35ohP1QfNjxPLlHD+K\n" +
+            "iDAR9z6zkwjIrbwPCnb5kuXy4lpwPcmmmkva25fI7qlpHtbcuQdoBdCfr/KkKaUCMPyY89LCXgEw\n" +
+            "5KTDj64UywKBgQCNfbO+eZLGzhiHhtNJurresCsIGWlInv322gL8CSfBMYl6eNfUTZvUDdFhPISL\n" +
+            "UljKWzXDrjw0ujFSPR0XhUGtiq89H+HUTuPPYv25gVXO+HTgBFZEPl4PpA+BUsSVZy0NddneyqLk\n" +
+            "42Wey9omY9Q8WsdNQS5cbUvy0uG6WFoX7wKBgQDZ1jpW8pa0x2bZsQsm4vo+3G5CRnZlUp+XlWt2\n" +
+            "dDcp5dC0xD1zbs1dc0NcLeGDOTDv9FSl7hok42iHXXq8AygjEm/QcuwwQ1nC2HxmQP5holAiUs4D\n" +
+            "WHM8PWs3wFYPzE459EBoKTxeaeP/uWAn+he8q7d5uWvSZlEcANs/6e77eQKBgD21Ar0hfFfj7mK8\n" +
+            "9E0FeRZBsqK3omkfnhcYgZC11Xa2SgT1yvs2Va2n0RcdM5kncr3eBZav2GYOhhAdwyBM55XuE/sO\n" +
+            "eokDVutNeuZ6d5fqV96TRaRBpvgfTvvRwxZ9hvKF4Vz+9wfn/JvCwANaKmegF6ejs7pvmF3whq2k\n" +
+            "drZVAoGAX5YxQ5XMTD0QbMAl7/6qp6S58xNoVdfCkmkj1ZLKaHKIjS/benkKGlySVQVPexPfnkZx\n" +
+            "p/Vv9yyphBoudiTBS9Uog66ueLYZqpgxlM/6OhYg86Gm3U2ycvMxYjBM1NFiyze21AqAhI+HX+Ot\n" +
+            "mraV2/guSgDgZAhukRZzeQ2RucI=\n" +
+            "-----END PRIVATE KEY-----";
+
     private static final boolean TLSV1_3_JDK_SUPPORTED;
     private static final boolean TLSV1_3_JDK_DEFAULT_ENABLED;
 
@@ -121,7 +165,7 @@ final class SslUtils {
             DEFAULT_TLSV13_CIPHER_SUITES = EmptyArrays.EMPTY_STRINGS;
         }
 
-        List<String> defaultCiphers = new ArrayList<String>();
+        Set<String> defaultCiphers = new LinkedHashSet<String>();
         // GCM (Galois/Counter Mode) requires JDK 8.
         defaultCiphers.add("TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384");
         defaultCiphers.add("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256");
@@ -154,7 +198,7 @@ final class SslUtils {
     private static boolean isTLSv13SupportedByJDK0(Provider provider) {
         try {
             return arrayContains(newInitContext(provider)
-                    .getSupportedSSLParameters().getProtocols(), PROTOCOL_TLS_V1_3);
+                    .getSupportedSSLParameters().getProtocols(), SslProtocols.TLS_v1_3);
         } catch (Throwable cause) {
             logger.debug("Unable to detect if JDK SSLEngine with provider {} supports TLSv1.3, assuming no",
                     provider, cause);
@@ -175,7 +219,7 @@ final class SslUtils {
     private static boolean isTLSv13EnabledByJDK0(Provider provider) {
         try {
             return arrayContains(newInitContext(provider)
-                    .getDefaultSSLParameters().getProtocols(), PROTOCOL_TLS_V1_3);
+                    .getDefaultSSLParameters().getProtocols(), SslProtocols.TLS_v1_3);
         } catch (Throwable cause) {
             logger.debug("Unable to detect if JDK SSLEngine with provider {} enables TLSv1.3 by default," +
                     " assuming no", provider, cause);
@@ -193,6 +237,22 @@ final class SslUtils {
         }
         context.init(null, new TrustManager[0], null);
         return context;
+    }
+
+    static SSLContext getSSLContext(String provider)
+            throws NoSuchAlgorithmException, KeyManagementException, NoSuchProviderException {
+        final SSLContext context;
+        if (StringUtil.isNullOrEmpty(provider)) {
+            context = SSLContext.getInstance(getTlsVersion());
+        } else {
+            context = SSLContext.getInstance(getTlsVersion(), provider);
+        }
+        context.init(null, new TrustManager[0], null);
+        return context;
+    }
+
+    private static String getTlsVersion() {
+        return TLSV1_3_JDK_SUPPORTED ? SslProtocols.TLS_v1_3 : SslProtocols.TLS_v1_2;
     }
 
     static boolean arrayContains(String[] array, String value) {
@@ -246,17 +306,12 @@ final class SslUtils {
      * the readerIndex of the given {@link ByteBuf}.
      *
      * @param   buffer
-     *                  The {@link ByteBuf} to read from. Be aware that it must have at least
-     *                  {@link #SSL_RECORD_HEADER_LENGTH} bytes to read,
-     *                  otherwise it will throw an {@link IllegalArgumentException}.
+     *                  The {@link ByteBuf} to read from.
      * @return length
      *                  The length of the encrypted packet that is included in the buffer or
      *                  {@link #SslUtils#NOT_ENOUGH_DATA} if not enough data is present in the
      *                  {@link ByteBuf}. This will return {@link SslUtils#NOT_ENCRYPTED} if
      *                  the given {@link ByteBuf} is not encrypted at all.
-     * @throws IllegalArgumentException
-     *                  Is thrown if the given {@link ByteBuf} has not at least {@link #SSL_RECORD_HEADER_LENGTH}
-     *                  bytes to read.
      */
     static int getEncryptedPacketLength(ByteBuf buffer, int offset) {
         int packetLength = 0;
@@ -277,15 +332,23 @@ final class SslUtils {
         }
 
         if (tls) {
-            // SSLv3 or TLS - Check ProtocolVersion
+            // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1 - Check ProtocolVersion
             int majorVersion = buffer.getUnsignedByte(offset + 1);
-            if (majorVersion == 3) {
-                // SSLv3 or TLS
+            int version = buffer.getShort(offset + 1);
+            if (majorVersion == 3 || version == GMSSL_PROTOCOL_VERSION) {
+                // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1
                 packetLength = unsignedShortBE(buffer, offset + 3) + SSL_RECORD_HEADER_LENGTH;
                 if (packetLength <= SSL_RECORD_HEADER_LENGTH) {
                     // Neither SSLv3 or TLSv1 (i.e. SSLv2 or bad data)
                     tls = false;
                 }
+            } else if (version == DTLS_1_0 || version == DTLS_1_2 || version == DTLS_1_3) {
+                if (buffer.readableBytes() < offset + DTLS_RECORD_HEADER_LENGTH) {
+                    return NOT_ENOUGH_DATA;
+                }
+                // length is the last 2 bytes in the 13 byte header.
+                packetLength = unsignedShortBE(buffer, offset + DTLS_RECORD_HEADER_LENGTH - 2) +
+                        DTLS_RECORD_HEADER_LENGTH;
             } else {
                 // Neither SSLv3 or TLSv1 (i.e. SSLv2 or bad data)
                 tls = false;
@@ -313,15 +376,21 @@ final class SslUtils {
     // Reads a big-endian unsigned short integer from the buffer
     @SuppressWarnings("deprecation")
     private static int unsignedShortBE(ByteBuf buffer, int offset) {
-        return buffer.order() == ByteOrder.BIG_ENDIAN ?
-                buffer.getUnsignedShort(offset) : buffer.getUnsignedShortLE(offset);
+        int value = buffer.getUnsignedShort(offset);
+        if (buffer.order() == ByteOrder.LITTLE_ENDIAN) {
+            value = Integer.reverseBytes(value) >>> Short.SIZE;
+        }
+        return value;
     }
 
     // Reads a big-endian short integer from the buffer
     @SuppressWarnings("deprecation")
     private static short shortBE(ByteBuf buffer, int offset) {
-        return buffer.order() == ByteOrder.BIG_ENDIAN ?
-                buffer.getShort(offset) : buffer.getShortLE(offset);
+        short value = buffer.getShort(offset);
+        if (buffer.order() == ByteOrder.LITTLE_ENDIAN) {
+            value = Short.reverseBytes(value);
+        }
+        return value;
     }
 
     private static short unsignedByte(byte b) {
@@ -382,10 +451,10 @@ final class SslUtils {
         }
 
         if (tls) {
-            // SSLv3 or TLS - Check ProtocolVersion
+            // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1 - Check ProtocolVersion
             int majorVersion = unsignedByte(buffer.get(pos + 1));
-            if (majorVersion == 3) {
-                // SSLv3 or TLS
+            if (majorVersion == 3 || buffer.getShort(pos + 1) == GMSSL_PROTOCOL_VERSION) {
+                // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1
                 packetLength = unsignedShortBE(buffer, pos + 3) + SSL_RECORD_HEADER_LENGTH;
                 if (packetLength <= SSL_RECORD_HEADER_LENGTH) {
                     // Neither SSLv3 or TLSv1 (i.e. SSLv2 or bad data)
@@ -458,23 +527,22 @@ final class SslUtils {
      * Validate that the given hostname can be used in SNI extension.
      */
     static boolean isValidHostNameForSNI(String hostname) {
+        // See  https://datatracker.ietf.org/doc/html/rfc6066#section-3
         return hostname != null &&
+               // SNI HostName has to be a FQDN according to TLS SNI Extension spec (see [1]),
+               // which means that is has to have at least a host name and a domain part.
                hostname.indexOf('.') > 0 &&
-               !hostname.endsWith(".") &&
+               !hostname.endsWith(".") && !hostname.startsWith("/") &&
                !NetUtil.isValidIpV4Address(hostname) &&
                !NetUtil.isValidIpV6Address(hostname);
     }
 
     /**
-     * Returns {@code true} if the the given cipher (in openssl format) is for TLSv1.3, {@code false} otherwise.
+     * Returns {@code true} if the given cipher (in openssl format) is for TLSv1.3, {@code false} otherwise.
      */
     static boolean isTLSv13Cipher(String cipher) {
         // See https://tools.ietf.org/html/rfc8446#appendix-B.4
         return TLSV13_CIPHERS.contains(cipher);
-    }
-
-    static boolean isEmpty(Object[] arr) {
-        return arr == null || arr.length == 0;
     }
 
     private SslUtils() {

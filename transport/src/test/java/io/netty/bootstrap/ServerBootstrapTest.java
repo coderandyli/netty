@@ -29,20 +29,25 @@ import io.netty.channel.local.LocalChannel;
 import io.netty.channel.local.LocalEventLoopGroup;
 import io.netty.channel.local.LocalServerChannel;
 import io.netty.util.AttributeKey;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ServerBootstrapTest {
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testHandlerRegister() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicReference<Throwable> error = new AtomicReference<Throwable>();
@@ -72,12 +77,14 @@ public class ServerBootstrapTest {
         }
     }
 
-    @Test(timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = TimeUnit.MILLISECONDS)
     public void testParentHandler() throws Exception {
         testParentHandler(false);
     }
 
-    @Test(timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = TimeUnit.MILLISECONDS)
     public void testParentHandlerViaChannelInitializer() throws Exception {
         testParentHandler(true);
     }
@@ -173,5 +180,64 @@ public class ServerBootstrapTest {
         clientChannel.close().syncUninterruptibly();
         group.shutdownGracefully();
         assertTrue(requestServed.get());
+    }
+
+    @Test
+    void mustCallInitializerExtensions() throws Exception {
+        LocalAddress addr = new LocalAddress(ServerBootstrapTest.class);
+        final AtomicReference<Channel> expectedServerChannel = new AtomicReference<Channel>();
+        final AtomicReference<Channel> expectedChildChannel = new AtomicReference<Channel>();
+        LocalEventLoopGroup group = new LocalEventLoopGroup(1);
+        final ServerBootstrap sb = new ServerBootstrap();
+        sb.group(group);
+        sb.channel(LocalServerChannel.class);
+        sb.handler(new ChannelInitializer<Channel>() {
+            @Override
+            protected void initChannel(Channel ch) throws Exception {
+                expectedServerChannel.set(ch);
+            }
+        });
+        sb.childHandler(new ChannelInitializer<Channel>() {
+            @Override
+            protected void initChannel(Channel ch) throws Exception {
+                expectedChildChannel.set(ch);
+            }
+        });
+
+        StubChannelInitializerExtension.clearThreadLocals();
+        group.submit(new Runnable() {
+            @Override
+            public void run() {
+                StubChannelInitializerExtension.clearThreadLocals();
+            }
+        }).sync();
+
+        Channel serverChannel = sb.bind(addr).syncUninterruptibly().channel();
+
+        assertNull(StubChannelInitializerExtension.lastSeenClientChannel.get());
+        assertNull(StubChannelInitializerExtension.lastSeenChildChannel.get());
+        assertSame(expectedServerChannel.get(), StubChannelInitializerExtension.lastSeenListenerChannel.get());
+        assertSame(serverChannel, StubChannelInitializerExtension.lastSeenListenerChannel.get());
+
+        Bootstrap cb = new Bootstrap();
+        cb.group(group)
+                .channel(LocalChannel.class)
+                .handler(new ChannelInboundHandlerAdapter());
+        Channel clientChannel = cb.connect(addr).syncUninterruptibly().channel();
+
+        assertSame(clientChannel, StubChannelInitializerExtension.lastSeenClientChannel.get());
+        group.submit(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                assertSame(expectedChildChannel.get(), StubChannelInitializerExtension.lastSeenChildChannel.get());
+                return null;
+            }
+        }).sync();
+        assertSame(expectedServerChannel.get(), StubChannelInitializerExtension.lastSeenListenerChannel.get());
+        assertSame(serverChannel, StubChannelInitializerExtension.lastSeenListenerChannel.get());
+
+        serverChannel.close().syncUninterruptibly();
+        clientChannel.close().syncUninterruptibly();
+        group.shutdownGracefully();
     }
 }

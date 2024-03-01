@@ -87,7 +87,7 @@ final class HpackHuffmanEncoder {
         int n = 0;
 
         for (int i = 0; i < data.length(); i++) {
-            int b = data.charAt(i) & 0xFF;
+            int b = AsciiString.c2b(data.charAt(i)) & 0xFF;
             int code = codes[b];
             int nbits = lengths[b];
 
@@ -133,9 +133,9 @@ final class HpackHuffmanEncoder {
     private int getEncodedLengthSlowPath(CharSequence data) {
         long len = 0;
         for (int i = 0; i < data.length(); i++) {
-            len += lengths[data.charAt(i) & 0xFF];
+            len += lengths[AsciiString.c2b(data.charAt(i)) & 0xFF];
         }
-        return (int) ((len + 7) >> 3);
+        return (int) (len + 7 >> 3);
     }
 
     private final class EncodeProcessor implements ByteProcessor {

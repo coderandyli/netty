@@ -25,9 +25,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.concurrent.Future;
 import io.netty.util.internal.ObjectUtil;
 
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -113,18 +113,21 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     private final long writerIdleTimeNanos;
     private final long allIdleTimeNanos;
 
-    private ScheduledFuture<?> readerIdleTimeout;
+    private Future<?> readerIdleTimeout;
     private long lastReadTime;
     private boolean firstReaderIdleEvent = true;
 
-    private ScheduledFuture<?> writerIdleTimeout;
+    private Future<?> writerIdleTimeout;
     private long lastWriteTime;
     private boolean firstWriterIdleEvent = true;
 
-    private ScheduledFuture<?> allIdleTimeout;
+    private Future<?> allIdleTimeout;
     private boolean firstAllIdleEvent = true;
 
-    private byte state; // 0 - none, 1 - initialized, 2 - destroyed
+    private byte state;
+    private static final byte ST_INITIALIZED = 1;
+    private static final byte ST_DESTROYED = 2;
+
     private boolean reading;
 
     private long lastChangeCheckTimeStamp;
@@ -305,6 +308,25 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         }
     }
 
+    /**
+     * Reset the read timeout. As this handler is not thread-safe, this method <b>must</b> be called on the event loop.
+     */
+    public void resetReadTimeout() {
+        if (readerIdleTimeNanos > 0 || allIdleTimeNanos > 0) {
+            lastReadTime = ticksInNanos();
+            reading = false;
+        }
+    }
+
+    /**
+     * Reset the write timeout. As this handler is not thread-safe, this method <b>must</b> be called on the event loop.
+     */
+    public void resetWriteTimeout() {
+        if (writerIdleTimeNanos > 0 || allIdleTimeNanos > 0) {
+            lastWriteTime = ticksInNanos();
+        }
+    }
+
     private void initialize(ChannelHandlerContext ctx) {
         // Avoid the case where destroy() is called before scheduling timeouts.
         // See: https://github.com/netty/netty/issues/143
@@ -312,9 +334,11 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         case 1:
         case 2:
             return;
+        default:
+             break;
         }
 
-        state = 1;
+        state = ST_INITIALIZED;
         initOutputChanged(ctx);
 
         lastReadTime = lastWriteTime = ticksInNanos();
@@ -342,12 +366,12 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     /**
      * This method is visible for testing!
      */
-    ScheduledFuture<?> schedule(ChannelHandlerContext ctx, Runnable task, long delay, TimeUnit unit) {
+    Future<?> schedule(ChannelHandlerContext ctx, Runnable task, long delay, TimeUnit unit) {
         return ctx.executor().schedule(task, delay, unit);
     }
 
     private void destroy() {
-        state = 2;
+        state = ST_DESTROYED;
 
         if (readerIdleTimeout != null) {
             readerIdleTimeout.cancel(false);
@@ -457,10 +481,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
                 long flushProgress = buf.currentProgress();
                 if (flushProgress != lastFlushProgress) {
                     lastFlushProgress = flushProgress;
-
-                    if (!first) {
-                        return true;
-                    }
+                    return !first;
                 }
             }
         }

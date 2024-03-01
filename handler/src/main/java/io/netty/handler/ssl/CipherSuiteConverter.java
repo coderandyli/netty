@@ -17,6 +17,7 @@
 package io.netty.handler.ssl;
 
 import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.UnstableApi;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -34,7 +35,8 @@ import static java.util.Collections.singletonMap;
  *
  * @see <a href="https://en.wikipedia.org/wiki/Cipher_suite">Wikipedia page about cipher suite</a>
  */
-final class CipherSuiteConverter {
+@UnstableApi
+public final class CipherSuiteConverter {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(CipherSuiteConverter.class);
 
@@ -86,10 +88,27 @@ final class CipherSuiteConverter {
     private static final Pattern OPENSSL_AES_PATTERN = Pattern.compile("^(AES)([0-9]+)-(.*)$");
 
     /**
+     * Used to store nullable values in a CHM
+     */
+    private static final class CachedValue {
+
+        private static final CachedValue NULL = new CachedValue(null);
+
+        static CachedValue of(String value) {
+            return value != null ? new CachedValue(value) : NULL;
+        }
+
+        final String value;
+        private CachedValue(String value) {
+            this.value = value;
+        }
+    }
+
+    /**
      * Java-to-OpenSSL cipher suite conversion map
      * Note that the Java cipher suite has the protocol prefix (TLS_, SSL_)
      */
-    private static final ConcurrentMap<String, String> j2o = PlatformDependent.newConcurrentHashMap();
+    private static final ConcurrentMap<String, CachedValue> j2o = PlatformDependent.newConcurrentHashMap();
 
     /**
      * OpenSSL-to-Java cipher suite conversion map.
@@ -130,7 +149,8 @@ final class CipherSuiteConverter {
      * Tests if the specified key-value pair has been cached in Java-to-OpenSSL cache.
      */
     static boolean isJ2OCached(String key, String value) {
-        return value.equals(j2o.get(key));
+        CachedValue cached = j2o.get(key);
+        return cached != null && value.equals(cached.value);
     }
 
     /**
@@ -150,10 +170,10 @@ final class CipherSuiteConverter {
      *
      * @return {@code null} if the conversion has failed
      */
-    static String toOpenSsl(String javaCipherSuite, boolean boringSSL) {
-        String converted = j2o.get(javaCipherSuite);
+    public static String toOpenSsl(String javaCipherSuite, boolean boringSSL) {
+        CachedValue converted = j2o.get(javaCipherSuite);
         if (converted != null) {
-            return converted;
+            return converted.value;
         }
         return cacheFromJava(javaCipherSuite, boringSSL);
     }
@@ -165,12 +185,13 @@ final class CipherSuiteConverter {
         }
 
         String openSslCipherSuite = toOpenSslUncached(javaCipherSuite, boringSSL);
+
+        // Cache the mapping.
+        j2o.putIfAbsent(javaCipherSuite, CachedValue.of(openSslCipherSuite));
+
         if (openSslCipherSuite == null) {
             return null;
         }
-
-        // Cache the mapping.
-        j2o.putIfAbsent(javaCipherSuite, openSslCipherSuite);
 
         // Cache the reverse mapping after stripping the protocol prefix (TLS_ or SSL_)
         final String javaCipherSuiteSuffix = javaCipherSuite.substring(4);
@@ -279,7 +300,7 @@ final class CipherSuiteConverter {
      * @param protocol The cryptographic protocol (i.e. SSL, TLS, ...).
      * @return The translated cipher suite name according to java conventions. This will not be {@code null}.
      */
-    static String toJava(String openSslCipherSuite, String protocol) {
+    public static String toJava(String openSslCipherSuite, String protocol) {
         Map<String, String> p2j = o2j.get(openSslCipherSuite);
         if (p2j == null) {
             p2j = cacheFromOpenSsl(openSslCipherSuite);
@@ -324,8 +345,9 @@ final class CipherSuiteConverter {
         o2j.putIfAbsent(openSslCipherSuite, p2j);
 
         // Cache the reverse mapping after adding the protocol prefix (TLS_ or SSL_)
-        j2o.putIfAbsent(javaCipherSuiteTls, openSslCipherSuite);
-        j2o.putIfAbsent(javaCipherSuiteSsl, openSslCipherSuite);
+        CachedValue cachedValue = CachedValue.of(openSslCipherSuite);
+        j2o.putIfAbsent(javaCipherSuiteTls, cachedValue);
+        j2o.putIfAbsent(javaCipherSuiteSsl, cachedValue);
 
         logger.debug("Cipher suite mapping: {} => {}", javaCipherSuiteTls, openSslCipherSuite);
         logger.debug("Cipher suite mapping: {} => {}", javaCipherSuiteSsl, openSslCipherSuite);

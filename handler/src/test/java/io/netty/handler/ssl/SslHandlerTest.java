@@ -62,8 +62,9 @@ import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.PlatformDependent;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
-import org.junit.Assume;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.function.Executable;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -79,8 +80,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -95,18 +94,27 @@ import javax.net.ssl.X509ExtendedTrustManager;
 import static io.netty.buffer.Unpooled.wrappedBuffer;
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 public class SslHandlerTest {
 
-    @Test(timeout = 5000)
+    private static final Executor DIRECT_EXECUTOR = new Executor() {
+        @Override
+        public void execute(Runnable command) {
+            command.run();
+        }
+    };
+
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testNonApplicationDataFailureFailsQueuedWrites() throws NoSuchAlgorithmException, InterruptedException {
         final CountDownLatch writeLatch = new CountDownLatch(1);
         final Queue<ChannelPromise> writesToFail = new ConcurrentLinkedQueue<ChannelPromise>();
@@ -201,14 +209,26 @@ public class SslHandlerTest {
         assertFalse(ch.finishAndReleaseAll());
     }
 
-    @Test(expected = SslHandshakeTimeoutException.class, timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = TimeUnit.MILLISECONDS)
     public void testClientHandshakeTimeout() throws Exception {
-        testHandshakeTimeout(true);
+        assertThrows(SslHandshakeTimeoutException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                testHandshakeTimeout(true);
+            }
+        });
     }
 
-    @Test(expected = SslHandshakeTimeoutException.class, timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = TimeUnit.MILLISECONDS)
     public void testServerHandshakeTimeout() throws Exception {
-        testHandshakeTimeout(false);
+        assertThrows(SslHandshakeTimeoutException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                testHandshakeTimeout(false);
+            }
+        });
     }
 
     private static SSLEngine newServerModeSSLEngine() throws NoSuchAlgorithmException {
@@ -251,7 +271,8 @@ public class SslHandlerTest {
         }
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeAndClosePromiseFailedOnRemoval() throws Exception {
         SSLEngine engine = SSLContext.getDefault().createSSLEngine();
         engine.setUseClientMode(true);
@@ -291,7 +312,7 @@ public class SslHandlerTest {
     @Test
     public void testTruncatedPacket() throws Exception {
         SSLEngine engine = newServerModeSSLEngine();
-        EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
+        final EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
 
         // Push the first part of a 5-byte handshake message.
         ch.writeInbound(wrappedBuffer(new byte[]{22, 3, 1, 0, 5}));
@@ -299,27 +320,28 @@ public class SslHandlerTest {
         // Should decode nothing yet.
         assertThat(ch.readInbound(), is(nullValue()));
 
-        try {
-            // Push the second part of the 5-byte handshake message.
-            ch.writeInbound(wrappedBuffer(new byte[]{2, 0, 0, 1, 0}));
-            fail();
-        } catch (DecoderException e) {
-            // Be sure we cleanup the channel and release any pending messages that may have been generated because
-            // of an alert.
-            // See https://github.com/netty/netty/issues/6057.
-            ch.finishAndReleaseAll();
+        DecoderException e = assertThrows(DecoderException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                // Push the second part of the 5-byte handshake message.
+                ch.writeInbound(wrappedBuffer(new byte[]{2, 0, 0, 1, 0}));
+            }
+        });
+        // Be sure we cleanup the channel and release any pending messages that may have been generated because
+        // of an alert.
+        // See https://github.com/netty/netty/issues/6057.
+        ch.finishAndReleaseAll();
 
-            // The pushed message is invalid, so it should raise an exception if it decoded the message correctly.
-            assertThat(e.getCause(), is(instanceOf(SSLProtocolException.class)));
-        }
+        // The pushed message is invalid, so it should raise an exception if it decoded the message correctly.
+        assertThat(e.getCause(), is(instanceOf(SSLProtocolException.class)));
     }
 
     @Test
     public void testNonByteBufWriteIsReleased() throws Exception {
         SSLEngine engine = newServerModeSSLEngine();
-        EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
+        final EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
 
-        AbstractReferenceCounted referenceCounted = new AbstractReferenceCounted() {
+        final AbstractReferenceCounted referenceCounted = new AbstractReferenceCounted() {
             @Override
             public ReferenceCounted touch(Object hint) {
                 return this;
@@ -329,26 +351,30 @@ public class SslHandlerTest {
             protected void deallocate() {
             }
         };
-        try {
-            ch.write(referenceCounted).get();
-            fail();
-        } catch (ExecutionException e) {
-            assertThat(e.getCause(), is(instanceOf(UnsupportedMessageTypeException.class)));
-        }
+
+        ExecutionException e = assertThrows(ExecutionException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                ch.write(referenceCounted).get();
+            }
+        });
+        assertThat(e.getCause(), is(instanceOf(UnsupportedMessageTypeException.class)));
         assertEquals(0, referenceCounted.refCnt());
         assertTrue(ch.finishAndReleaseAll());
     }
 
-    @Test(expected = UnsupportedMessageTypeException.class)
+    @Test
     public void testNonByteBufNotPassThrough() throws Exception {
         SSLEngine engine = newServerModeSSLEngine();
-        EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
+        final EmbeddedChannel ch = new EmbeddedChannel(new SslHandler(engine));
 
-        try {
-            ch.writeOutbound(new Object());
-        } finally {
-            ch.finishAndReleaseAll();
-        }
+        assertThrows(UnsupportedMessageTypeException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                ch.writeOutbound(new Object());
+            }
+        });
+        ch.finishAndReleaseAll();
     }
 
     @Test
@@ -367,7 +393,7 @@ public class SslHandlerTest {
 
     @Test
     public void testReleaseSslEngine() throws Exception {
-        assumeTrue(OpenSsl.isAvailable());
+        OpenSsl.ensureAvailability();
 
         SelfSignedCertificate cert = new SelfSignedCertificate();
         try {
@@ -446,7 +472,8 @@ public class SslHandlerTest {
         new TlsReadTest().test(true);
     }
 
-    @Test(timeout = 30000)
+    @Test
+    @Timeout(value = 30000, unit = TimeUnit.MILLISECONDS)
     public void testRemoval() throws Exception {
         NioEventLoopGroup group = new NioEventLoopGroup();
         Channel sc = null;
@@ -539,11 +566,12 @@ public class SslHandlerTest {
 
         assertFalse(ch.finishAndReleaseAll());
 
-        assertTrue(handler.handshakeFuture().cause() instanceof ClosedChannelException);
-        assertTrue(handler.sslCloseFuture().cause() instanceof ClosedChannelException);
+        assertThat(handler.handshakeFuture().cause(), instanceOf(ClosedChannelException.class));
+        assertThat(handler.sslCloseFuture().cause(), instanceOf(ClosedChannelException.class));
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testEventsFired() throws Exception {
         SSLEngine engine = newServerModeSSLEngine();
         final BlockingQueue<SslCompletionEvent> events = new LinkedBlockingQueue<SslCompletionEvent>();
@@ -560,15 +588,16 @@ public class SslHandlerTest {
 
         SslCompletionEvent evt = events.take();
         assertTrue(evt instanceof SslHandshakeCompletionEvent);
-        assertTrue(evt.cause() instanceof ClosedChannelException);
+        assertThat(evt.cause(), instanceOf(ClosedChannelException.class));
 
         evt = events.take();
         assertTrue(evt instanceof SslCloseCompletionEvent);
-        assertTrue(evt.cause() instanceof ClosedChannelException);
+        assertThat(evt.cause(), instanceOf(ClosedChannelException.class));
         assertTrue(events.isEmpty());
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeFailBeforeWritePromise() throws Exception {
         SelfSignedCertificate ssc = new SelfSignedCertificate();
         final SslContext sslServerCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
@@ -731,7 +760,8 @@ public class SslHandlerTest {
         }
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testCloseOnHandshakeFailure() throws Exception {
         final SelfSignedCertificate ssc = new SelfSignedCertificate();
 
@@ -806,10 +836,11 @@ public class SslHandlerTest {
         assertTrue(engine.isOutboundDone());
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeFailedByWriteBeforeChannelActive() throws Exception {
         final SslContext sslClientCtx = SslContextBuilder.forClient()
-                                                         .protocols(SslUtils.PROTOCOL_SSL_V3)
+                                                         .protocols(SslProtocols.SSL_v3)
                                                          .trustManager(InsecureTrustManagerFactory.INSTANCE)
                                                          .sslProvider(SslProvider.JDK).build();
 
@@ -879,12 +910,14 @@ public class SslHandlerTest {
         }
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeTimeoutFlushStartsHandshake() throws Exception {
         testHandshakeTimeout0(false);
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeTimeoutStartTLS() throws Exception {
         testHandshakeTimeout0(true);
     }
@@ -952,55 +985,160 @@ public class SslHandlerTest {
     }
 
     @Test
-    public void testHandshakeWithExecutorThatExecuteDirecty() throws Exception {
-        testHandshakeWithExecutor(new Executor() {
-            @Override
-            public void execute(Runnable command) {
-                command.run();
-            }
-        });
+    public void testHandshakeWithExecutorThatExecuteDirectlyJDK() throws Throwable {
+        testHandshakeWithExecutor(DIRECT_EXECUTOR, SslProvider.JDK, false);
     }
 
     @Test
-    public void testHandshakeWithImmediateExecutor() throws Exception {
-        testHandshakeWithExecutor(ImmediateExecutor.INSTANCE);
+    public void testHandshakeWithImmediateExecutorJDK() throws Throwable {
+        testHandshakeWithExecutor(ImmediateExecutor.INSTANCE, SslProvider.JDK, false);
     }
 
     @Test
-    public void testHandshakeWithImmediateEventExecutor() throws Exception {
-        testHandshakeWithExecutor(ImmediateEventExecutor.INSTANCE);
+    public void testHandshakeWithImmediateEventExecutorJDK() throws Throwable {
+        testHandshakeWithExecutor(ImmediateEventExecutor.INSTANCE, SslProvider.JDK, false);
     }
 
     @Test
-    public void testHandshakeWithExecutor() throws Exception {
-        ExecutorService executorService = Executors.newCachedThreadPool();
+    public void testHandshakeWithExecutorJDK() throws Throwable {
+        DelayingExecutor executorService = new DelayingExecutor();
         try {
-            testHandshakeWithExecutor(executorService);
+            testHandshakeWithExecutor(executorService, SslProvider.JDK, false);
         } finally {
             executorService.shutdown();
         }
     }
 
-    private static void testHandshakeWithExecutor(Executor executor) throws Exception {
-        final SslContext sslClientCtx = SslContextBuilder.forClient()
-                .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                .sslProvider(SslProvider.JDK).build();
+    @Test
+    public void testHandshakeWithExecutorThatExecuteDirectlyOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(DIRECT_EXECUTOR, SslProvider.OPENSSL, false);
+    }
 
+    @Test
+    public void testHandshakeWithImmediateExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(ImmediateExecutor.INSTANCE, SslProvider.OPENSSL, false);
+    }
+
+    @Test
+    public void testHandshakeWithImmediateEventExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(ImmediateEventExecutor.INSTANCE, SslProvider.OPENSSL, false);
+    }
+
+    @Test
+    public void testHandshakeWithExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        DelayingExecutor executorService = new DelayingExecutor();
+        try {
+            testHandshakeWithExecutor(executorService, SslProvider.OPENSSL, false);
+        } finally {
+            executorService.shutdown();
+        }
+    }
+
+    @Test
+    public void testHandshakeMTLSWithExecutorThatExecuteDirectlyJDK() throws Throwable {
+        testHandshakeWithExecutor(DIRECT_EXECUTOR, SslProvider.JDK, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithImmediateExecutorJDK() throws Throwable {
+        testHandshakeWithExecutor(ImmediateExecutor.INSTANCE, SslProvider.JDK, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithImmediateEventExecutorJDK() throws Throwable {
+        testHandshakeWithExecutor(ImmediateEventExecutor.INSTANCE, SslProvider.JDK, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithExecutorJDK() throws Throwable {
+        DelayingExecutor executorService = new DelayingExecutor();
+        try {
+            testHandshakeWithExecutor(executorService, SslProvider.JDK, true);
+        } finally {
+            executorService.shutdown();
+        }
+    }
+
+    @Test
+    public void testHandshakeMTLSWithExecutorThatExecuteDirectlyOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(DIRECT_EXECUTOR, SslProvider.OPENSSL, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithImmediateExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(ImmediateExecutor.INSTANCE, SslProvider.OPENSSL, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithImmediateEventExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        testHandshakeWithExecutor(ImmediateEventExecutor.INSTANCE, SslProvider.OPENSSL, true);
+    }
+
+    @Test
+    public void testHandshakeMTLSWithExecutorOpenSsl() throws Throwable {
+        OpenSsl.ensureAvailability();
+        DelayingExecutor executorService = new DelayingExecutor();
+        try {
+            testHandshakeWithExecutor(executorService, SslProvider.OPENSSL, true);
+        } finally {
+            executorService.shutdown();
+        }
+    }
+
+    private static void testHandshakeWithExecutor(Executor executor, SslProvider provider, boolean mtls)
+            throws Throwable {
         final SelfSignedCertificate cert = new SelfSignedCertificate();
-        final SslContext sslServerCtx = SslContextBuilder.forServer(cert.key(), cert.cert())
-                .sslProvider(SslProvider.JDK).build();
+        final SslContext sslClientCtx;
+        final SslContext sslServerCtx;
+        if (mtls) {
+            sslClientCtx = SslContextBuilder.forClient().protocols(SslProtocols.TLS_v1_2)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE).keyManager(cert.key(), cert.cert())
+                    .sslProvider(provider).build();
+
+            sslServerCtx = SslContextBuilder.forServer(cert.key(), cert.cert()).protocols(SslProtocols.TLS_v1_2)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .clientAuth(ClientAuth.REQUIRE)
+                    .sslProvider(provider).build();
+        } else {
+            sslClientCtx = SslContextBuilder.forClient()
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .sslProvider(provider).build();
+
+            sslServerCtx = SslContextBuilder.forServer(cert.key(), cert.cert())
+                    .sslProvider(provider).build();
+        }
 
         EventLoopGroup group = new NioEventLoopGroup();
         Channel sc = null;
         Channel cc = null;
-        final SslHandler clientSslHandler = sslClientCtx.newHandler(UnpooledByteBufAllocator.DEFAULT, executor);
-        final SslHandler serverSslHandler = sslServerCtx.newHandler(UnpooledByteBufAllocator.DEFAULT, executor);
-
+        final SslHandler clientSslHandler = new SslHandler(
+                sslClientCtx.newEngine(UnpooledByteBufAllocator.DEFAULT), executor);
+        final SslHandler serverSslHandler = new SslHandler(
+                sslServerCtx.newEngine(UnpooledByteBufAllocator.DEFAULT), executor);
+        final AtomicReference<Throwable> causeRef = new AtomicReference<Throwable>();
         try {
             sc = new ServerBootstrap()
                     .group(group)
                     .channel(NioServerSocketChannel.class)
-                    .childHandler(serverSslHandler)
+                    .childHandler(new ChannelInitializer<Channel>() {
+                        @Override
+                        protected void initChannel(Channel ch) {
+                            ch.pipeline().addLast(serverSslHandler);
+                            ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                                @Override
+                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                                    causeRef.compareAndSet(null, cause);
+                                }
+                            });
+                        }
+                    })
                     .bind(new InetSocketAddress(0)).syncUninterruptibly().channel();
 
             ChannelFuture future = new Bootstrap()
@@ -1010,12 +1148,22 @@ public class SslHandlerTest {
                         @Override
                         protected void initChannel(Channel ch) {
                             ch.pipeline().addLast(clientSslHandler);
+                            ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                                @Override
+                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                                    causeRef.compareAndSet(null, cause);
+                                }
+                            });
                         }
                     }).connect(sc.localAddress());
             cc = future.syncUninterruptibly().channel();
 
             assertTrue(clientSslHandler.handshakeFuture().await().isSuccess());
             assertTrue(serverSslHandler.handshakeFuture().await().isSuccess());
+            Throwable cause = causeRef.get();
+            if (cause != null) {
+                throw cause;
+            }
         } finally {
             if (cc != null) {
                 cc.close().syncUninterruptibly();
@@ -1113,30 +1261,34 @@ public class SslHandlerTest {
         }
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSessionTicketsWithTLSv12() throws Throwable {
-        testSessionTickets(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_2, true);
+        testSessionTickets(SslProvider.OPENSSL, SslProtocols.TLS_v1_2, true);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSessionTicketsWithTLSv13() throws Throwable {
         assumeTrue(SslProvider.isTlsv13Supported(SslProvider.OPENSSL));
-        testSessionTickets(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_3, true);
+        testSessionTickets(SslProvider.OPENSSL, SslProtocols.TLS_v1_3, true);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSessionTicketsWithTLSv12AndNoKey() throws Throwable {
-        testSessionTickets(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_2, false);
+        testSessionTickets(SslProvider.OPENSSL, SslProtocols.TLS_v1_2, false);
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testSessionTicketsWithTLSv13AndNoKey() throws Throwable {
         assumeTrue(OpenSsl.isTlsv13Supported());
-        testSessionTickets(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_3, false);
+        testSessionTickets(SslProvider.OPENSSL, SslProtocols.TLS_v1_3, false);
     }
 
     private static void testSessionTickets(SslProvider provider, String protocol, boolean withKey) throws Throwable {
-        assumeTrue(OpenSsl.isAvailable());
+        OpenSsl.ensureAvailability();
         final SslContext sslClientCtx = SslContextBuilder.forClient()
                 .trustManager(InsecureTrustManagerFactory.INSTANCE)
                 .sslProvider(provider)
@@ -1190,7 +1342,7 @@ public class SslHandlerTest {
                                         // This test only works for non TLSv1.3 as TLSv1.3 will establish sessions after
                                         // the handshake is done.
                                         // See https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_sess_set_get_cb.html
-                                        if (!SslUtils.PROTOCOL_TLS_V1_3.equals(engine.getSession().getProtocol())) {
+                                        if (!SslProtocols.TLS_v1_3.equals(engine.getSession().getProtocol())) {
                                             // First should not re-use the session
                                             try {
                                                 assertEquals(handshakeCount > 1, engine.isSessionReused());
@@ -1264,7 +1416,7 @@ public class SslHandlerTest {
             // This test only works for non TLSv1.3 as TLSv1.3 will establish sessions after
             // the handshake is done.
             // See https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_sess_set_get_cb.html
-            if (!SslUtils.PROTOCOL_TLS_V1_3.equals(engine.getSession().getProtocol())) {
+            if (!SslProtocols.TLS_v1_3.equals(engine.getSession().getProtocol())) {
                 assertEquals(isReused, engine.isSessionReused());
             }
             Object obj = queue.take();
@@ -1287,7 +1439,8 @@ public class SslHandlerTest {
         }
     }
 
-    @Test(timeout = 10000L)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testHandshakeFailureOnlyFireExceptionOnce() throws Exception {
         final SslContext sslClientCtx = SslContextBuilder.forClient()
                 .trustManager(new X509ExtendedTrustManager() {
@@ -1412,21 +1565,21 @@ public class SslHandlerTest {
 
     @Test
     public void testHandshakeFailureCipherMissmatchTLSv13Jdk() throws Exception {
-        Assume.assumeTrue(SslProvider.isTlsv13Supported(SslProvider.JDK));
+        assumeTrue(SslProvider.isTlsv13Supported(SslProvider.JDK));
         testHandshakeFailureCipherMissmatch(SslProvider.JDK, true);
     }
 
     @Test
     public void testHandshakeFailureCipherMissmatchTLSv12OpenSsl() throws Exception {
-        Assume.assumeTrue(OpenSsl.isAvailable());
+        OpenSsl.ensureAvailability();
         testHandshakeFailureCipherMissmatch(SslProvider.OPENSSL, false);
     }
 
     @Test
     public void testHandshakeFailureCipherMissmatchTLSv13OpenSsl() throws Exception {
-         Assume.assumeTrue(OpenSsl.isAvailable());
-        Assume.assumeTrue(SslProvider.isTlsv13Supported(SslProvider.OPENSSL));
-        Assume.assumeFalse("BoringSSL does not support setting ciphers for TLSv1.3 explicit", OpenSsl.isBoringSSL());
+        OpenSsl.ensureAvailability();
+        assumeTrue(SslProvider.isTlsv13Supported(SslProvider.OPENSSL));
+        assumeFalse(OpenSsl.isBoringSSL(), "BoringSSL does not support setting ciphers for TLSv1.3 explicit");
         testHandshakeFailureCipherMissmatch(SslProvider.OPENSSL, true);
     }
 
@@ -1438,11 +1591,11 @@ public class SslHandlerTest {
         if (tls13) {
             clientCipher = "TLS_AES_128_GCM_SHA256";
             serverCipher = "TLS_AES_256_GCM_SHA384";
-            protocol = SslUtils.PROTOCOL_TLS_V1_3;
+            protocol = SslProtocols.TLS_v1_3;
         } else {
             clientCipher = "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256";
             serverCipher = "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384";
-            protocol = SslUtils.PROTOCOL_TLS_V1_2;
+            protocol = SslProtocols.TLS_v1_2;
         }
         final SslContext sslClientCtx = SslContextBuilder.forClient()
                 .trustManager(InsecureTrustManagerFactory.INSTANCE)
@@ -1531,30 +1684,35 @@ public class SslHandlerTest {
     }
 
     @Test
-    public void testHandshakeEventsTls12JDK() throws Exception {
-        testHandshakeEvents(SslProvider.JDK, SslUtils.PROTOCOL_TLS_V1_2);
+    public void testSslCompletionEventsTls12JDK() throws Exception {
+        testSslCompletionEvents(SslProvider.JDK, SslProtocols.TLS_v1_2, true);
+        testSslCompletionEvents(SslProvider.JDK, SslProtocols.TLS_v1_2, false);
     }
 
     @Test
-    public void testHandshakeEventsTls12Openssl() throws Exception {
-        assumeTrue(OpenSsl.isAvailable());
-        testHandshakeEvents(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_2);
+    public void testSslCompletionEventsTls12Openssl() throws Exception {
+        OpenSsl.ensureAvailability();
+        testSslCompletionEvents(SslProvider.OPENSSL, SslProtocols.TLS_v1_2, true);
+        testSslCompletionEvents(SslProvider.OPENSSL, SslProtocols.TLS_v1_2, false);
     }
 
     @Test
-    public void testHandshakeEventsTls13JDK() throws Exception {
+    public void testSslCompletionEventsTls13JDK() throws Exception {
         assumeTrue(SslProvider.isTlsv13Supported(SslProvider.JDK));
-        testHandshakeEvents(SslProvider.JDK, SslUtils.PROTOCOL_TLS_V1_3);
+        testSslCompletionEvents(SslProvider.JDK, SslProtocols.TLS_v1_3, true);
+        testSslCompletionEvents(SslProvider.JDK, SslProtocols.TLS_v1_3, false);
     }
 
     @Test
-    public void testHandshakeEventsTls13Openssl() throws Exception {
-        assumeTrue(OpenSsl.isAvailable());
+    public void testSslCompletionEventsTls13Openssl() throws Exception {
+        OpenSsl.ensureAvailability();
         assumeTrue(SslProvider.isTlsv13Supported(SslProvider.OPENSSL));
-        testHandshakeEvents(SslProvider.OPENSSL, SslUtils.PROTOCOL_TLS_V1_3);
+        testSslCompletionEvents(SslProvider.OPENSSL, SslProtocols.TLS_v1_3, true);
+        testSslCompletionEvents(SslProvider.OPENSSL, SslProtocols.TLS_v1_3, false);
     }
 
-    private void testHandshakeEvents(SslProvider provider, String protocol) throws Exception {
+    private void testSslCompletionEvents(SslProvider provider, final String protocol, boolean clientClose)
+            throws Exception {
         final SslContext sslClientCtx = SslContextBuilder.forClient()
                 .trustManager(InsecureTrustManagerFactory.INSTANCE)
                 .protocols(protocol)
@@ -1567,20 +1725,35 @@ public class SslHandlerTest {
 
         EventLoopGroup group = new NioEventLoopGroup();
 
-        final LinkedBlockingQueue<SslHandshakeCompletionEvent> serverCompletionEvents =
+        final LinkedBlockingQueue<Channel> acceptedChannels =
+                new LinkedBlockingQueue<Channel>();
+
+        final LinkedBlockingQueue<SslHandshakeCompletionEvent> serverHandshakeCompletionEvents =
                 new LinkedBlockingQueue<SslHandshakeCompletionEvent>();
 
-        final LinkedBlockingQueue<SslHandshakeCompletionEvent> clientCompletionEvents =
+        final LinkedBlockingQueue<SslHandshakeCompletionEvent> clientHandshakeCompletionEvents =
                 new LinkedBlockingQueue<SslHandshakeCompletionEvent>();
+
+        final LinkedBlockingQueue<SslCloseCompletionEvent> serverCloseCompletionEvents =
+                new LinkedBlockingQueue<SslCloseCompletionEvent>();
+
+        final LinkedBlockingQueue<SslCloseCompletionEvent> clientCloseCompletionEvents =
+                new LinkedBlockingQueue<SslCloseCompletionEvent>();
         try {
             Channel sc = new ServerBootstrap()
                     .group(group)
                     .channel(NioServerSocketChannel.class)
                     .childHandler(new ChannelInitializer<Channel>() {
                         @Override
-                        protected void initChannel(Channel ch) throws Exception {
-                            ch.pipeline().addLast(sslServerCtx.newHandler(UnpooledByteBufAllocator.DEFAULT));
-                            ch.pipeline().addLast(new SslHandshakeCompletionEventHandler(serverCompletionEvents));
+                        protected void initChannel(Channel ch) {
+                            acceptedChannels.add(ch);
+                            SslHandler handler = sslServerCtx.newHandler(ch.alloc());
+                            if (!SslProtocols.TLS_v1_3.equals(protocol)) {
+                                handler.setCloseNotifyReadTimeout(5, TimeUnit.SECONDS);
+                            }
+                            ch.pipeline().addLast(handler);
+                            ch.pipeline().addLast(new SslCompletionEventHandler(
+                                    serverHandshakeCompletionEvents, serverCloseCompletionEvents));
                         }
                     })
                     .bind(new InetSocketAddress(0)).syncUninterruptibly().channel();
@@ -1591,9 +1764,15 @@ public class SslHandlerTest {
                     .handler(new ChannelInitializer<Channel>() {
                         @Override
                         protected void initChannel(Channel ch) {
-                            ch.pipeline().addLast(sslClientCtx.newHandler(
-                                    UnpooledByteBufAllocator.DEFAULT, "netty.io", 9999));
-                            ch.pipeline().addLast(new SslHandshakeCompletionEventHandler(clientCompletionEvents));
+                            SslHandler handler = sslClientCtx.newHandler(
+                                    ch.alloc(), "netty.io", 9999);
+                            if (!SslProtocols.TLS_v1_3.equals(protocol)) {
+                                handler.setCloseNotifyReadTimeout(5, TimeUnit.SECONDS);
+                            }
+                            ch.pipeline().addLast(handler);
+                            ch.pipeline().addLast(
+                                    new SslCompletionEventHandler(
+                                            clientHandshakeCompletionEvents, clientCloseCompletionEvents));
                         }
                     })
                     .remoteAddress(sc.localAddress());
@@ -1604,19 +1783,72 @@ public class SslHandlerTest {
             // We expect 4 events as we have 2 connections and for each connection there should be one event
             // on the server-side and one on the client-side.
             for (int i = 0; i < 2; i++) {
-                SslHandshakeCompletionEvent event = clientCompletionEvents.take();
+                SslHandshakeCompletionEvent event = clientHandshakeCompletionEvents.take();
                 assertTrue(event.isSuccess());
             }
             for (int i = 0; i < 2; i++) {
-                SslHandshakeCompletionEvent event = serverCompletionEvents.take();
+                SslHandshakeCompletionEvent event = serverHandshakeCompletionEvents.take();
                 assertTrue(event.isSuccess());
             }
 
-            cc1.close().sync();
-            cc2.close().sync();
+            assertEquals(0, clientCloseCompletionEvents.size());
+            assertEquals(0, serverCloseCompletionEvents.size());
+
+            if (clientClose) {
+                cc1.close().sync();
+                cc2.close().sync();
+
+                acceptedChannels.take().closeFuture().sync();
+                acceptedChannels.take().closeFuture().sync();
+            } else {
+                acceptedChannels.take().close().sync();
+                acceptedChannels.take().close().sync();
+
+                cc1.closeFuture().sync();
+                cc2.closeFuture().sync();
+            }
+
+            // We expect 4 events as we have 2 connections and for each connection there should be one event
+            // on the server-side and one on the client-side.
+            for (int i = 0; i < 2; i++) {
+                SslCloseCompletionEvent event = clientCloseCompletionEvents.take();
+                if (clientClose) {
+                    // When we use TLSv1.3 the remote peer is not required to send a close_notify as response.
+                    // See:
+                    //  - https://datatracker.ietf.org/doc/html/rfc8446#section-6.1
+                    //  - https://bugs.openjdk.org/browse/JDK-8208526
+                    if (SslProtocols.TLS_v1_3.equals(protocol)) {
+                        assertNotNull(event);
+                    } else {
+                        assertTrue(event.isSuccess());
+                    }
+                } else {
+                    assertTrue(event.isSuccess());
+                }
+            }
+            for (int i = 0; i < 2; i++) {
+                SslCloseCompletionEvent event = serverCloseCompletionEvents.take();
+
+                if (clientClose) {
+                    assertTrue(event.isSuccess());
+                } else {
+                    // When we use TLSv1.3 the remote peer is not required to send a close_notify as response.
+                    // See:
+                    //  - https://datatracker.ietf.org/doc/html/rfc8446#section-6.1
+                    //  - https://bugs.openjdk.org/browse/JDK-8208526
+                    if (SslProtocols.TLS_v1_3.equals(protocol)) {
+                        assertNotNull(event);
+                    } else {
+                        assertTrue(event.isSuccess());
+                    }
+                }
+            }
+
             sc.close().sync();
-            assertEquals(0, clientCompletionEvents.size());
-            assertEquals(0, serverCompletionEvents.size());
+            assertEquals(0, clientHandshakeCompletionEvents.size());
+            assertEquals(0, serverHandshakeCompletionEvents.size());
+            assertEquals(0, clientCloseCompletionEvents.size());
+            assertEquals(0, serverCloseCompletionEvents.size());
         } finally {
             group.shutdownGracefully();
             ReferenceCountUtil.release(sslClientCtx);
@@ -1624,17 +1856,22 @@ public class SslHandlerTest {
         }
     }
 
-    private static class SslHandshakeCompletionEventHandler extends ChannelInboundHandlerAdapter {
-        private final Queue<SslHandshakeCompletionEvent> completionEvents;
+    private static class SslCompletionEventHandler extends ChannelInboundHandlerAdapter {
+        private final Queue<SslHandshakeCompletionEvent> handshakeCompletionEvents;
+        private final Queue<SslCloseCompletionEvent> closeCompletionEvents;
 
-        SslHandshakeCompletionEventHandler(Queue<SslHandshakeCompletionEvent> completionEvents) {
-            this.completionEvents = completionEvents;
+        SslCompletionEventHandler(Queue<SslHandshakeCompletionEvent> handshakeCompletionEvents,
+                                  Queue<SslCloseCompletionEvent> closeCompletionEvents) {
+            this.handshakeCompletionEvents = handshakeCompletionEvents;
+            this.closeCompletionEvents = closeCompletionEvents;
         }
 
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
             if (evt instanceof SslHandshakeCompletionEvent) {
-                completionEvents.add((SslHandshakeCompletionEvent) evt);
+                handshakeCompletionEvents.add((SslHandshakeCompletionEvent) evt);
+            } else if (evt instanceof SslCloseCompletionEvent) {
+                closeCompletionEvents.add((SslCloseCompletionEvent) evt);
             }
         }
 
@@ -1642,5 +1879,5 @@ public class SslHandlerTest {
         public boolean isSharable() {
             return true;
         }
-    };
+    }
 }
